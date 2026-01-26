@@ -36,7 +36,7 @@ podman run --rm -it \
     download -s stable -a $(uname -m) -p metal -f iso -C /work --decompress
 ```
 
-Build customized ISO:
+Build the customized ISO:
 
 ```sh
 podman run --rm -it \
