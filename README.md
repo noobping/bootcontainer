@@ -4,5 +4,5 @@
 Build ignition file:
 
 ```sh
-butane --pretty --strict desktop.bu > desktop.ign
+butane --pretty --strict desktop.yml > desktop.json
 ```
