@@ -12,7 +12,7 @@ storage:
       mode: 0440
       contents:
         inline: |
-          pc
+          workstation
 
 systemd:
   units:

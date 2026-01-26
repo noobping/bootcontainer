@@ -7,7 +7,7 @@ boot_device:
 
 systemd:
   units:
-    - name: rebase-to-desktop.service
+    - name: rebase-to-workstation.service
       enabled: true
       contents: |
         [Unit]
@@ -18,7 +18,7 @@ systemd:
 
         [Service]
         Type=oneshot
-        ExecStart=/usr/bin/rpm-ostree rebase ostree-unverified-registry:quay.io/noobping/desktop:latest
+        ExecStart=/usr/bin/rpm-ostree rebase ostree-unverified-registry:quay.io/noobping/workstation:latest
         ExecStart=/usr/bin/touch /var/lib/rebase.done
         ExecStart=/usr/bin/systemctl --no-block reboot
 

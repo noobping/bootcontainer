@@ -4,18 +4,18 @@
 Build the butane files:
 
 ```sh
-yq ea '. as $item ireduce ({}; . *+ $item)' base.yml live.yml > live.bu
-yq ea '. as $item ireduce ({}; . *+ $item)' base.yml desktop.yml > desktop.bu
+yq ea '. as $item ireduce ({}; . *+ $item)' base.yml setup.yml > setup.bu
+yq ea '. as $item ireduce ({}; . *+ $item)' base.yml workstation.yml > workstation.bu
 ```
 
 Build ignition file:
 
 ```sh
-butane --pretty --strict live.bu > live.ign
-butane --pretty --strict desktop.bu > desktop.ign
+butane --pretty --strict setup.bu > setup.ign
+butane --pretty --strict workstation.bu > workstation.ign
 ```
 
-Download FCOS live ISO
+Download live ISO
 
 ```sh
 podman run --rm -it \
@@ -24,4 +24,20 @@ podman run --rm -it \
     -v $PWD:/work:Z -w /work \
     quay.io/coreos/coreos-installer:release \
     download -s stable -a $(uname -m) -p metal -f iso -C /work --decompress
+```
+
+Build customized ISO:
+
+```sh
+podman run --rm -it \
+    --userns=keep-id \
+    --user $(id -u):$(id -g) \
+    -v $PWD:/work:Z -w /work \
+    quay.io/coreos/coreos-installer:release \
+    iso customize \
+        --setup-ignition setup.ign \
+        --dest-ignition workstation.ign \
+        --pre-install scripts/detect-device.sh \
+        -o workstation-$(uname -m).iso \
+        $(ls -1 fedora-coreos-*-live-iso.$(uname -m).iso | tail -n1)
 ```
