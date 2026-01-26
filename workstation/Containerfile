@@ -6,6 +6,8 @@ RUN rpm-ostree install -y cachefilesd \
     gdm \
     gnome-session \
     gnome-control-center \
+    gnome-keyring \
+    gnome-disk-utility \
     xdg-desktop-portal \
     xdg-desktop-portal-gtk \
     flatpak \
@@ -15,9 +17,13 @@ RUN rpm-ostree install -y cachefilesd \
     mesa-dri-drivers \
     pipewire \
     wireplumber \
-    fuse fuse-libs \
+    fuse fuse-libs gvfs-fuse \
+    toolbox git podman openssh-clients \
     android-tools \
     aemu libvirt qemu-kvm \
+    openrgb-udev-rules \
+    libhid hidapi \
+    cups bluez dconf-editor \
     nautilus nautilus-python python3-pygit2 \
     steam-devices && \
   rm -rf /var/cache/* && \
