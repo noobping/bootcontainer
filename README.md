@@ -1,6 +1,16 @@
 
 # Desktop ignition
 
+## os
+
+Build the operating systyem:
+
+```sh
+podman build -t ghcr.io/noobping/workstation:latest .
+```
+
+## ISO
+
 Build the butane files:
 
 ```sh
