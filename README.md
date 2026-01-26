@@ -11,5 +11,6 @@ yq ea '. as $item ireduce ({}; . *+ $item)' base.yml desktop.yml > desktop.bu
 Build ignition file:
 
 ```sh
-butane --pretty --strict desktop.bu > desktop.json
+butane --pretty --strict live.bu > live.ign
+butane --pretty --strict desktop.bu > desktop.ign
 ```
