@@ -26,56 +26,73 @@ jobs:
       matrix:
         arch: [x86_64, aarch64]
 
-    container:
-      image: fedora:43
-      options: >-
-        --privileged
-        --security-opt seccomp=unconfined
-      volumes:
-        - /mnt/containers:/var/lib/containers
-        - /mnt/runcontainers:/run/containers
-        - /mnt/tmp:/tmp
-
     permissions:
       contents: read
       packages: write
+      id-token: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: sigstore/cosign-installer@v3
+
+      - uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Space
+        run: |
+          df -h
+          sudo du -hs /opt/hostedtoolcache 2>/dev/null || true
 
       - name: Build tools
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          dnf -y update
-          dnf -y install git podman buildah skopeo jq ca-certificates fuse-overlayfs
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ca-certificates curl git jq \
+            podman buildah skopeo \
+            fuse-overlayfs uidmap slirp4netns
+          sudo update-ca-certificates
+
+          buildah --version
+          podman --version
+          skopeo --version
 
       - name: Storage
         run: |
-          mkdir -p /var/lib/containers /run/containers
-          cat > /etc/containers/storage.conf <<'EOF'
+          sudo mkdir -p /mnt/containers /mnt/runcontainers /mnt/tmp
+          sudo chown -R "$USER:$USER" /mnt/containers /mnt/runcontainers /mnt/tmp
+
+          mkdir -p ~/.config/containers
+          cat > ~/.config/containers/storage.conf <<'EOF'
           [storage]
           driver = "overlay"
-          runroot = "/run/containers/storage"
-          graphroot = "/var/lib/containers/storage"
+          runroot = "/mnt/runcontainers/storage"
+          graphroot = "/mnt/containers/storage"
 
           [storage.options]
           mount_program = "/usr/bin/fuse-overlayfs"
           EOF
 
           buildah info
-          df -h /
-          df -h /var/lib/containers || true
-          df -h /github/workspace || true
-          du -hs /var/lib/containers/storage 2>/dev/null || true
 
       - name: Repository
         run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | cosign login ghcr.io -u "${{ github.actor }}" --password-stdin
           echo "${{ secrets.GITHUB_TOKEN }}" | buildah login -u "${{ github.actor }}" --password-stdin ghcr.io
 
       - name: Build
         working-directory: workstation
         env:
           BUILDAH_ISOLATION: chroot
+          TMPDIR: /mnt/tmp
         run: |
           IMAGE="${IMAGE_NAME}:${{ matrix.arch }}"
 
@@ -84,6 +101,7 @@ jobs:
             --isolation=chroot \
             --layers=false \
             --rm \
+            --arch "${{ matrix.arch }}" \
             -f Containerfile \
             -t "$IMAGE" \
             --label org.opencontainers.image.source="${{ github.repositoryUrl }}" \
@@ -91,7 +109,12 @@ jobs:
             --build-arg GID=1000 \
             .
 
-          buildah push "$IMAGE" "docker://$IMAGE"
+          buildah push --digestfile digest.txt "$IMAGE" "docker://$IMAGE"
+
+          DIGEST="$(cat digest.txt)"
+          echo "Digest: $DIGEST"
+          cosign sign --yes "$IMAGE@$DIGEST"
+
           buildah rmi "$IMAGE" || true
           buildah prune -f || true
 
