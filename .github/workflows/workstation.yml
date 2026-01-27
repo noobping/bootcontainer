@@ -20,11 +20,16 @@ env:
 jobs:
   build:
     name: Build ${{ matrix.arch }}
-    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        arch: [x86_64, aarch64]
+        include:
+          - arch: amd64
+            runs_on: ubuntu-24.04-x64
+          - arch: arm64
+            runs_on: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.runs_on }}
 
     permissions:
       contents: read
@@ -101,7 +106,6 @@ jobs:
             --isolation=chroot \
             --layers=false \
             --rm \
-            --arch "${{ matrix.arch }}" \
             -f Containerfile \
             -t "$IMAGE" \
             --label org.opencontainers.image.source="${{ github.repositoryUrl }}" \
@@ -140,5 +144,5 @@ jobs:
         run: |
           docker buildx imagetools create \
             -t "${IMAGE_NAME}:latest" \
-            "${IMAGE_NAME}:x86_64" \
-            "${IMAGE_NAME}:aarch64"
+            "${IMAGE_NAME}:amd64" \
+            "${IMAGE_NAME}:arm64"
