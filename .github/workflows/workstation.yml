@@ -31,6 +31,10 @@ jobs:
       options: >-
         --privileged
         --security-opt seccomp=unconfined
+      volumes:
+        - /mnt/containers:/var/lib/containers
+        - /mnt/runcontainers:/run/containers
+        - /mnt/tmp:/tmp
 
     permissions:
       contents: read
