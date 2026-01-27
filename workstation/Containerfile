@@ -2,30 +2,30 @@ FROM quay.io/fedora/fedora-coreos:stable
 LABEL org.opencontainers.image.title="Workstation" \
   org.opencontainers.image.description="Nick's bootable container"
 RUN rpm-ostree install -y cachefilesd \
-    gnome-shell \
-    gdm \
-    gnome-session \
-    gnome-control-center \
-    gnome-keyring \
-    gnome-disk-utility \
-    xdg-desktop-portal \
-    xdg-desktop-portal-gtk \
+    NetworkManager-wifi \
+    aemu libvirt qemu-kvm \
+    android-tools \
+    cups bluez dconf-editor \
+    dbus-daemon \
     flatpak \
     flatpak-spawn \
-    dbus-daemon \
-    NetworkManager-wifi \
-    mesa-dri-drivers \
-    pipewire \
-    wireplumber \
     fuse fuse-libs gvfs-fuse \
-    toolbox git podman openssh-clients \
-    android-tools \
-    aemu libvirt qemu-kvm \
-    openrgb-udev-rules \
+    gdm \
+    gnome-control-center \
+    gnome-disk-utility \
+    gnome-keyring \
+    gnome-session \
+    gnome-shell \
     libhid hidapi \
-    cups bluez dconf-editor \
+    mesa-dri-drivers \
     nautilus nautilus-python python3-pygit2 \
+    openrgb-udev-rules \
+    pipewire \
     steam-devices && \
+    toolbox git \
+    wireplumber \
+    xdg-desktop-portal \
+    xdg-desktop-portal-gtk \
   rm -rf /var/cache/* && \
   ostree container commit
 COPY cachefilesd.conf /etc/cachefilesd.conf
