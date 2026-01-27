@@ -19,7 +19,6 @@ RUN rpm-ostree install -y cachefilesd \
     gnome-shell \
     gnome-initial-setup \
     gnome-network-displays \
-    polkit-gnome \
     libhid hidapi \
     mesa-dri-drivers \
     nautilus nautilus-python python3-pygit2 \
