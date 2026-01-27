@@ -1,6 +1,15 @@
 FROM quay.io/fedora/fedora-coreos:stable
 LABEL org.opencontainers.image.title="Workstation" \
   org.opencontainers.image.description="Nick's bootable container"
+RUN rpm --import https://packages.microsoft.com/keys/microsoft.asc && \
+    curl -L -o /etc/yum.repos.d/ms-edge.repo \
+      https://packages.microsoft.com/yumrepos/edge/config.repo && \
+    curl -L -o /etc/yum.repos.d/ms-rhel10-prod.repo \
+      https://packages.microsoft.com/yumrepos/microsoft-rhel10.0-prod/config.repo && \
+    printf '\n[includepkgs]\n' && true && \
+    sed -i '/^\[microsoft-rhel10.0-prod-yum\]/a includepkgs=intune-portal microsoft-identity-broker' \
+      /etc/yum.repos.d/ms-rhel10-prod.repo && \
+    ostree container commit
 RUN rpm-ostree install -y cachefilesd \
     NetworkManager-wifi \
     aemu libvirt qemu-kvm \
@@ -18,6 +27,7 @@ RUN rpm-ostree install -y cachefilesd \
     gnome-shell \
     libhid hidapi \
     mesa-dri-drivers \
+    microsoft-edge-stable intune-portal \
     nautilus nautilus-python python3-pygit2 \
     openrgb-udev-rules \
     pipewire \
