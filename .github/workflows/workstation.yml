@@ -63,9 +63,11 @@ jobs:
           mount_program = "/usr/bin/fuse-overlayfs"
           EOF
 
-          # sanity
           buildah info
-          df -h
+          df -h /
+          df -h /var/lib/containers || true
+          df -h /github/workspace || true
+          du -hs /var/lib/containers/storage 2>/dev/null || true
 
       - name: Repository
         run: |
