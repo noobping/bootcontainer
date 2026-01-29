@@ -24,6 +24,7 @@ RUN rpm-ostree install -y cachefilesd \
     nautilus nautilus-python python3-pygit2 \
     openrgb-udev-rules \
     pipewire \
+    plymouth plymouth-system-theme plymouth-theme-spinner \
     power-profiles-daemon upower nut \
     steam-devices \
     toolbox git \
@@ -82,3 +83,11 @@ picture-options='zoom'\n" > /etc/dconf/db/local.d/00-background && \
 COPY aliases/ /etc/skel/.bashrc.d/
 COPY passwordstore.sh /passwordstore.sh
 RUN chmod +x /passwordstore.sh && rm /passwordstore.sh && ostree container commit
+RUN mkdir -p /usr/lib/bootc/kargs.d && \
+    cat > /usr/lib/bootc/kargs.d/10-splash.toml <<'EOF'
+kargs = ["rhgb", "quiet"]
+EOF
+RUN kver="$(ls -1 /usr/lib/modules | sort -V | tail -n1)" && \
+    echo "Building initramfs for $kver" && \
+    dracut --force --kver "$kver" "/usr/lib/modules/$kver/initramfs.img" && \
+    ostree container commit
