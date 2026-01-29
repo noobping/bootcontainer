@@ -1,0 +1,17 @@
+FROM fedora:latest
+LABEL org.opencontainers.image.title="Extensions installer"
+LABEL org.opencontainers.image.description="Nick's favorite GNOME desktop"
+RUN dnf -y install \
+        gnome-shell \
+        jq \
+        curl \
+        unzip \
+    && dnf -y clean all
+WORKDIR /app
+COPY lib.sh /app/lib.sh
+COPY install.sh /app/install.sh
+COPY extensions.list /app/extensions.list
+RUN chmod 0755 /app/install.sh /app/lib.sh
+ENV SKEL_DIR=/out
+ENV LIST_FILE=/app/extensions.list
+ENTRYPOINT ["/app/install.sh"]

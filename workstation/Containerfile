@@ -79,6 +79,6 @@ picture-options='zoom'\n" > /etc/dconf/db/local.d/00-background && \
   printf "[User]\nIcon=/usr/share/pixmaps/faces/nick.png\n" > /var/lib/AccountsService/default && \
   mkdir -p /etc/skel/.bashrc.d && \
   ostree container commit
-COPY aliases/ /etc/skel/.bashrc.d/
+COPY skel /etc/skel
 COPY passwordstore.sh /passwordstore.sh
 RUN chmod +x /passwordstore.sh && rm /passwordstore.sh && ostree container commit

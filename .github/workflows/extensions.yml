@@ -1,4 +1,4 @@
-name: Workstation
+name: Extensions
 
 on:
   push:
@@ -6,17 +6,13 @@ on:
       - main
       - master
     paths:
-      - "workstation/**"
-      - ".github/workflows/workstation.yml"
-
-  schedule:
-    - cron: "0 3 * * *"
+      - "extensions/**"
+      - ".github/workflows/extensions.yml"
 
   workflow_dispatch: {}
 
 env:
-  IMAGE_NAME: ghcr.io/noobping/workstation
-  INSTALL_EXTENTIONS: ghcr.io/noobping/gnome-extensions
+  IMAGE_NAME: ghcr.io/noobping/gnome-extensions
 
 jobs:
   build:
@@ -89,12 +85,8 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | cosign login ghcr.io -u "${{ github.actor }}" --password-stdin
           echo "${{ secrets.GITHUB_TOKEN }}" | buildah login -u "${{ github.actor }}" --password-stdin ghcr.io
 
-      - name: Extentions
-        run: |
-          podman run --rm -v "$(pwd)/workstation/skel:/out:Z" ${INSTALL_EXTENTIONS}
-
       - name: Build
-        working-directory: workstation
+        working-directory: extensions
         env:
           BUILDAH_ISOLATION: chroot
           TMPDIR: /mnt/tmp
