@@ -9,6 +9,10 @@ systemd:
   units:
     - name: switcheroo-control.service
       enabled: true
+    - name: power-profiles-daemon.service
+      enabled: true
+    - name: upower.service
+      enabled: true
     - name: rebase-to-workstation.service
       enabled: true
       contents: |
