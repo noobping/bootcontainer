@@ -44,6 +44,7 @@ systemd:
         Type=oneshot
         ExecStart=/usr/bin/flatpak remote-add --system --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
         ExecStart=/usr/bin/flatpak install --system --noninteractive flathub \
+          com.mattjakeman.ExtensionManager \
           io.github.kolunmi.Bazaar \
           it.mijorus.gearlever \
           org.gnome.TextEditor
