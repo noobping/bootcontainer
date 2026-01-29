@@ -63,7 +63,7 @@ systemd:
 
         [Service]
         Type=oneshot
-        ExecStart=/usr/bin/flatpak update -y
+        ExecStart=/usr/bin/flatpak update --system --noninteractive
 
         [Install]
         WantedBy=multi-user.target
