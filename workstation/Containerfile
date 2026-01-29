@@ -11,7 +11,7 @@ RUN rpm-ostree install -y cachefilesd \
     flatpak flatpak-spawn \
     fuse fuse-libs gvfs-fuse \
     gdm \
-    glibc-langpack-en glibc-langpack-nl \
+    glibc-all-langpacks \
     gnome-backgrounds \
     gnome-control-center \
     gnome-disk-utility \
