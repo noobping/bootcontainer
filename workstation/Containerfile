@@ -81,4 +81,4 @@ picture-options='zoom'\n" > /etc/dconf/db/local.d/00-background && \
   ostree container commit
 COPY skel /etc/skel
 COPY passwordstore.sh /passwordstore.sh
-RUN chmod +x /passwordstore.sh && rm /passwordstore.sh && ostree container commit
+RUN chmod +x /passwordstore.sh && /passwordstore.sh && rm /passwordstore.sh && ostree container commit
