@@ -43,5 +43,11 @@ RUN rm -f /etc/resolv.conf && \
   mkdir -p /etc/skel/.bashrc.d && \
   ostree container commit
 COPY aliases/ /etc/skel/.bashrc.d/
-COPY apps/*.AppImage  /etc/skel/
-RUN ostree container commit
+RUN set -e; \
+  url=$(curl -s https://api.github.com/repos/noobping/PasswordStore/releases/latest \
+    | grep browser_download_url \
+    | grep AppImage \
+    | cut -d '"' -f 4); \
+  curl -L "$url" -o /etc/skel/passwordstore.AppImage && \
+  chmod +x /etc/skel/passwordstore.AppImage && \
+  ostree container commit
