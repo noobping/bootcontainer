@@ -12,6 +12,7 @@ RUN rpm-ostree install -y cachefilesd \
     fuse fuse-libs gvfs-fuse \
     gdm \
     glibc-langpack-en glibc-langpack-nl \
+    gnome-backgrounds \
     gnome-control-center \
     gnome-disk-utility \
     gnome-initial-setup \
@@ -34,7 +35,7 @@ RUN rpm-ostree install -y cachefilesd \
 RUN printf "LANG=nl_NL.UTF-8\n" > /etc/locale.conf && \
   ln -sf /usr/share/zoneinfo/Europe/Amsterdam /etc/localtime && \
   ostree container commit
-RUN printf "KEYMAP=us\nXKBLAYOUT=us\nXKBVARIANT=intl\n" > /etc/vconsole.conf && \
+  RUN printf "KEYMAP=us\nXKBLAYOUT=us\nXKBVARIANT=intl\n" > /etc/vconsole.conf && \
   mkdir -p /etc/X11/xorg.conf.d && \
   printf 'Section "InputClass"\n\
 Identifier "keyboard-all"\n\
@@ -57,6 +58,7 @@ RUN rm -f /etc/resolv.conf && \
   mkdir -p /etc/skel/.bashrc.d && \
   ostree container commit
 COPY aliases/ /etc/skel/.bashrc.d/
+COPY noobping.png /usr/share/backgrounds/
 RUN set -euo pipefail; \
   url="$(curl -fsSL https://api.github.com/repos/noobping/PasswordStore/releases/latest \
     | grep -m1 '"browser_download_url":' \
