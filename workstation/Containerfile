@@ -6,6 +6,7 @@ RUN rpm-ostree install -y cachefilesd \
     accountsservice \
     aemu libvirt qemu-kvm \
     android-tools \
+    cryptsetup tpm2-tss tpm2-tools \
     cups bluez dconf-editor \
     dbus-daemon \
     flatpak flatpak-spawn \
@@ -32,6 +33,22 @@ RUN rpm-ostree install -y cachefilesd \
     xdg-desktop-portal-gtk && \
   rm -rf /var/cache/* && \
   ostree container commit
+COPY systemd/*.service /usr/lib/systemd/system/
+RUN systemctl enable \
+    set-timezone.service \
+    fwupd-refresh.service \
+    fwupd-update-shutdown.service \
+    install-system-flatpaks.service \
+    update-system-flatpaks.service \
+    podman.socket \
+    nftables.service \
+    podman-auto-update.timer \
+    systemd-timesyncd.service \
+    switcheroo-control.service \
+    power-profiles-daemon.service \
+    upower.service && \
+  ostree container commit
+RUN printf "workstation\n" > /etc/hostname && ostree container commit
 RUN printf "LANG=nl_NL.UTF-8\n" > /etc/locale.conf && \
   ln -sf /usr/share/zoneinfo/Europe/Amsterdam /etc/localtime && \
   ostree container commit

@@ -1,0 +1,21 @@
+[Unit]
+Description=Install system Flatpaks
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=!/var/lib/system-flatpaks.done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/flatpak remote-add --system --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+ExecStart=/usr/bin/flatpak install --system --noninteractive flathub \
+    com.mattjakeman.ExtensionManager \
+    io.github.kolunmi.Bazaar \
+    it.mijorus.gearlever \
+    org.flatpak.Builder \
+    org.getzola.zola \
+    org.gnome.Calendar \
+    org.gnome.TextEditor
+ExecStart=/usr/bin/touch /var/lib/system-flatpaks.done
+
+[Install]
+WantedBy=multi-user.target

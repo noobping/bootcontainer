@@ -13,24 +13,6 @@ systemd:
       enabled: true
     - name: upower.service
       enabled: true
-    - name: rebase-to-workstation.service
-      enabled: true
-      contents: |
-        [Unit]
-        Description=Rebase FCOS to boot container image
-        Wants=network-online.target
-        After=network-online.target
-        ConditionPathExists=!/var/lib/rebase.done
-
-        [Service]
-        Type=oneshot
-        ExecStart=/usr/bin/rpm-ostree rebase ostree-unverified-registry:ghcr.io/noobping/workstation:latest
-        ExecStart=/usr/bin/touch /var/lib/rebase.done
-        ExecStart=/usr/bin/systemctl --no-block reboot
-
-        [Install]
-        WantedBy=multi-user.target
-
     - name: system-flatpaks.service
       enabled: true
       contents: |
@@ -38,7 +20,6 @@ systemd:
         Description=Install system Flatpaks
         Wants=network-online.target
         After=network-online.target
-        ConditionPathExists=/var/lib/rebase.done
         ConditionPathExists=!/var/lib/system-flatpaks.done
 
         [Service]

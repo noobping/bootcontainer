@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh firmware metadata and check for updates
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/fwupdmgr refresh --force
+ExecStart=/usr/bin/fwupdmgr get-updates
+
+[Install]
+WantedBy=multi-user.target

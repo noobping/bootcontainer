@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: mikefarah/yq@v4.45.1
 
-      - name: Install Podman
+      - name: Prepare
         run: |
           set -euxo pipefail
           if ! command -v podman >/dev/null 2>&1; then
@@ -47,16 +47,12 @@ jobs:
           fi
           podman --version
 
-      - name: Merge butane files
+      - name: Ignition
         run: |
           set -euxo pipefail
           yq ea '. as $item ireduce ({}; . *+ $item)' butane/base.yml butane/setup.yml > butane/setup.bu
           yq ea '. as $item ireduce ({}; . *+ $item)' butane/base.yml butane/workstation.yml > butane/workstation.bu
 
-      - name: Build ignition files
-        run: |
-          set -euxo pipefail
-          # setup.ign needs --files-dir .
           podman run --rm \
             -v "$PWD:/work:Z" -w /work \
             quay.io/coreos/butane:release \
@@ -67,45 +63,65 @@ jobs:
             quay.io/coreos/butane:release \
             --pretty --strict butane/workstation.bu > workstation.ign
 
-      - name: Download stable release
+      - name: Configure
         run: |
           set -euxo pipefail
-          arch="$(uname -m)"
-          podman run --rm \
-            --userns=keep-id \
-            --user "$(id -u):$(id -g)" \
-            -v "$PWD:/work:Z" -w /work \
-            quay.io/coreos/coreos-installer:release \
-            download -s stable -a "$arch" -p metal -f iso -C /work --decompress
+          test -f butane/iso-config.toml.in
+          test -f butane/detect-device.sh
 
-      - name: Build artifacts
+          python3 - <<'PY'
+          from pathlib import Path
+          tmpl = Path("butane/iso-config.toml.in").read_text()
+          script = Path("butane/detect-device.sh").read_text().rstrip("\n")
+          out = tmpl.replace("__DETECT_DEVICE_SCRIPT__", script)
+          Path("iso-config.toml").write_text(out)
+          print("Wrote iso-config.toml")
+          PY
+
+      - name: Build
+        id: build_iso
+        uses: osbuild/bootc-image-builder-action@v1
+        with:
+          config-file: ./iso-config.toml
+          image: ${{ env.IMAGE_NAME }}:${{ matrix.arch }}
+          types: |
+            anaconda-iso
+
+      - name: Collect
         run: |
           set -euxo pipefail
-          arch="$(uname -m)"
-          base_iso="$(ls -1 fedora-coreos-*-live-iso."$arch".iso | tail -n1)"
-          out_iso="workstation-${arch}.iso"
-
-          podman run --rm \
-            --userns=keep-id \
-            --user "$(id -u):$(id -g)" \
-            -v "$PWD:/work:Z" -w /work \
-            quay.io/coreos/coreos-installer:release \
-            iso customize \
-              --live-ignition setup.ign \
-              --dest-ignition workstation.ign \
-              --pre-install butane/detect-device.sh \
-              -o "$out_iso" \
-              "$base_iso"
-
-          sha256sum "$out_iso" | tee "${out_iso}.sha256"
+          ISO_IN="${{ steps.build_iso.outputs.anaconda-iso-output-path }}"
+          OUT="workstation-installer-$(uname -m).iso"
+          cp -v "$ISO_IN" "$OUT"
+          sha256sum "$OUT" | tee "${OUT}.sha256"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: workstation-${{ matrix.runs_on }}
+          name: workstation-installer-${{ matrix.arch }}
           path: |
-            workstation-*.iso
-            workstation-*.iso.sha256
+            workstation-installer-${{ matrix.iso_arch }}.iso
+            workstation-installer-${{ matrix.iso_arch }}.iso.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Show files
+        run: |
+          set -euxo pipefail
+          find dist -type f -maxdepth 3 -print -exec ls -lah {} \;
 
       - name: Release artifacts
         uses: ncipollo/release-action@v1
@@ -116,7 +132,7 @@ jobs:
           replacesArtifacts: true
           prerelease: false
           makeLatest: true
-          artifacts: "workstation-*.iso,workstation-*.iso.sha256"
+          artifacts: "dist/**/*.iso,dist/**/*.sha256"
           generateReleaseNotes: false
           body: |
             This release is automatically updated.

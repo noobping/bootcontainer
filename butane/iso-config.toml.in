@@ -1,0 +1,72 @@
+[customizations.installer.kickstart]
+contents = """
+text --non-interactive
+lang nl_NL.UTF-8
+keyboard us
+timezone Europe/Amsterdam --utc
+reboot
+network --bootproto=dhcp --device=link --activate
+zerombr
+
+%pre --erroronfail --log=/tmp/ks-pre.log
+set -euxo pipefail
+
+cat > /tmp/detect-device.sh <<'SH'
+__DETECT_DEVICE_SCRIPT__
+SH
+chmod +x /tmp/detect-device.sh
+
+TARGET_DISK="$(/tmp/detect-device.sh)"
+if [ -z "${TARGET_DISK:-}" ] || [ ! -b "$TARGET_DISK" ]; then
+  echo "ERROR: detect-device.sh did not return a valid block device: '$TARGET_DISK'" >&2
+  exit 1
+fi
+
+LUKS_PW="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 64)"
+echo -n "$LUKS_PW" > /tmp/luks-passphrase
+chmod 600 /tmp/luks-passphrase
+
+DISK_BASENAME="$(basename "$TARGET_DISK")"
+
+cat > /tmp/part-include.ks <<KS
+ignoredisk --only-use=${DISK_BASENAME}
+clearpart --all --drives=${DISK_BASENAME} --initlabel
+
+part /boot/efi --fstype=efi --size=600 --fsoptions="umask=0077,shortname=winnt"
+part /boot --fstype=xfs --size=1024
+part / --fstype=xfs --grow --size=1 --encrypted --luks-version=luks2 --passphrase=${LUKS_PW}
+KS
+%end
+
+%include /tmp/part-include.ks
+bootloader --timeout=0
+
+%post --erroronfail --log=/mnt/sysimage/root/ks-post.log
+set -euxo pipefail
+
+in_target() { chroot /mnt/sysimage /usr/bin/env -i \
+  HOME=/root PATH=/usr/sbin:/usr/bin:/sbin:/bin "$@"; }
+
+ROOT_SRC="$(findmnt -n -o SOURCE /mnt/sysimage)"
+ROOT_BACKING="$(lsblk -no PKNAME "$ROOT_SRC" | head -n1 || true)"
+if [ -z "${ROOT_BACKING:-}" ]; then
+  echo "ERROR: Could not determine backing device for / (ROOT_SRC=$ROOT_SRC)" >&2
+  exit 1
+fi
+LUKS_DEV="/dev/${ROOT_BACKING}"
+in_target systemd-cryptenroll --version
+in_target systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 "$LUKS_DEV"
+in_target systemd-cryptenroll --recovery-key "$LUKS_DEV" | tee /mnt/sysimage/root/luks-recovery-key.txt
+chmod 600 /mnt/sysimage/root/luks-recovery-key.txt
+
+if in_target command -v cryptsetup >/dev/null 2>&1; then
+  in_target bash -lc "printf '%s' \"$(cat /tmp/luks-passphrase)\" | cryptsetup luksRemoveKey '$LUKS_DEV' -"
+else
+  echo "WARNING: cryptsetup not found in target; temp passphrase not removed." >&2
+fi
+
+if in_target command -v dracut >/dev/null 2>&1; then
+  in_target dracut -f
+fi
+%end
+"""
