@@ -80,7 +80,7 @@ jobs:
 
       - name: Build
         id: build_iso
-        uses: osbuild/bootc-image-builder-action@v1
+        uses: osbuild/bootc-image-builder-action@v0.0.2
         with:
           config-file: ./iso-config.toml
           image: ${{ env.IMAGE_NAME }}:${{ matrix.arch }}
