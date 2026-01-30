@@ -15,6 +15,9 @@ concurrency:
   group: iso-continuous
   cancel-in-progress: true
 
+env:
+  IMAGE_NAME: ghcr.io/noobping/workstation
+
 jobs:
   build:
     name: Build ${{ matrix.arch }}
