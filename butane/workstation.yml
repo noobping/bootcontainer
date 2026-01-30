@@ -45,24 +45,29 @@ systemd:
         Type=oneshot
         ExecStart=/usr/bin/flatpak remote-add --system --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
         ExecStart=/usr/bin/flatpak install --system --noninteractive flathub \
-          app.devsuite.Ptyxis \
-          app.drey.KeyRack \
-          com.github.marhkb.Pods \
-          com.github.tchx84.Flatseal \
           com.mattjakeman.ExtensionManager \
-          de.philippun1.turtle \
           io.github.kolunmi.Bazaar \
-          net.nokyan.Resources \
+          it.mijorus.gearlever \
           org.flatpak.Builder \
           org.getzola.zola \
-          org.gnome.Decibels \
-          org.gnome.Epiphany \
-          org.gnome.Fractal \
-          org.gnome.Papers \
-          org.gnome.Showtime \
-          org.gnome.TextEditor \
-          page.tesk.Refine
+          org.gnome.Calendar \
+          org.gnome.TextEditor
         ExecStart=/usr/bin/touch /var/lib/system-flatpaks.done
+
+        [Install]
+        WantedBy=multi-user.target
+    - name: update-system-flatpaks.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Update system flatpaks
+        Wants=network-online.target
+        After=network-online.target
+        ConditionPathExists=/var/lib/system-flatpaks.done
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/bin/flatpak update --system --noninteractive
 
         [Install]
         WantedBy=multi-user.target

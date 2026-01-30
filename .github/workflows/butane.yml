@@ -1,0 +1,122 @@
+name: Butane
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "butane/**"
+      - ".github/workflows/butane.yml"
+
+  workflow_dispatch: {}
+
+concurrency:
+  group: iso-continuous
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runs_on: ubuntu-latest
+          - arch: arm64
+            runs_on: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.runs_on }}
+
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mikefarah/yq@v4.45.1
+
+      - name: Install Podman
+        run: |
+          set -euxo pipefail
+          if ! command -v podman >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y podman
+          fi
+          podman --version
+
+      - name: Merge butane files
+        run: |
+          set -euxo pipefail
+          yq ea '. as $item ireduce ({}; . *+ $item)' butane/base.yml butane/setup.yml > butane/setup.bu
+          yq ea '. as $item ireduce ({}; . *+ $item)' butane/base.yml butane/workstation.yml > butane/workstation.bu
+
+      - name: Build ignition files
+        run: |
+          set -euxo pipefail
+          # setup.ign needs --files-dir .
+          podman run --rm \
+            -v "$PWD:/work:Z" -w /work \
+            quay.io/coreos/butane:release \
+            --pretty --strict --files-dir . butane/setup.bu > setup.ign
+
+          podman run --rm \
+            -v "$PWD:/work:Z" -w /work \
+            quay.io/coreos/butane:release \
+            --pretty --strict butane/workstation.bu > workstation.ign
+
+      - name: Download stable release
+        run: |
+          set -euxo pipefail
+          arch="$(uname -m)"
+          podman run --rm \
+            --userns=keep-id \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:/work:Z" -w /work \
+            quay.io/coreos/coreos-installer:release \
+            download -s stable -a "$arch" -p metal -f iso -C /work --decompress
+
+      - name: Build artifacts
+        run: |
+          set -euxo pipefail
+          arch="$(uname -m)"
+          base_iso="$(ls -1 fedora-coreos-*-live-iso."$arch".iso | tail -n1)"
+          out_iso="workstation-${arch}.iso"
+
+          podman run --rm \
+            --userns=keep-id \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:/work:Z" -w /work \
+            quay.io/coreos/coreos-installer:release \
+            iso customize \
+              --live-ignition setup.ign \
+              --dest-ignition workstation.ign \
+              --pre-install butane/detect-device.sh \
+              -o "$out_iso" \
+              "$base_iso"
+
+          sha256sum "$out_iso" | tee "${out_iso}.sha256"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: workstation-${{ matrix.runs_on }}
+          path: |
+            workstation-*.iso
+            workstation-*.iso.sha256
+
+      - name: Release artifacts
+        uses: ncipollo/release-action@v1
+        with:
+          tag: continuous
+          name: Continuous
+          allowUpdates: true
+          replacesArtifacts: true
+          prerelease: false
+          makeLatest: true
+          artifacts: "workstation-*.iso,workstation-*.iso.sha256"
+          generateReleaseNotes: false
+          body: |
+            This release is automatically updated.

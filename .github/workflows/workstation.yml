@@ -50,11 +50,6 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - name: Space
-        run: |
-          df -h
-          sudo du -hs /opt/hostedtoolcache 2>/dev/null || true
-
       - name: Build tools
         env:
           DEBIAN_FRONTEND: noninteractive
