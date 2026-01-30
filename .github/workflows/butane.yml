@@ -87,6 +87,7 @@ jobs:
         with:
           config-file: ./iso-config.toml
           image: ${{ env.IMAGE_NAME }}:${{ matrix.arch }}
+          rootfs: xfs
           types: |
             anaconda-iso
 
