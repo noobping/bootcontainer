@@ -102,6 +102,7 @@ COPY dconf-profile-user /etc/dconf/profile/user
 COPY flathub.txt /etc/recommended/flathub
 COPY firewall.xml /etc/firewalld/zones/public.xml
 COPY keychron-webhid.rules /usr/lib/udev/rules.d/70-keychron-webhid.rules
+COPY nick-home-ownership.service /etc/systemd/system/nick-home-ownership.service
 COPY suricata-direct.xml /etc/firewalld/direct.xml
 COPY libvirtd.conf /etc/libvirt/libvirtd.conf
 COPY nut-netclient-configure /usr/libexec/infrastructure/nut-netclient-configure
@@ -140,6 +141,7 @@ RUN set -euxo pipefail; \
     /etc/firewalld/direct.xml \
     /etc/polkit-1/rules.d/50-libvirt-access.rules \
     /etc/systemd/system/apply-skel.service \
+    /etc/systemd/system/nick-home-ownership.service \
     /etc/systemd/system/nut-netclient-configure.service \
     /etc/systemd/system/system-flatpaks.service \
     /etc/systemd/system/update-system-flatpaks.service \
@@ -168,6 +170,8 @@ RUN set -euxo pipefail; \
     /etc/systemd/system/multi-user.target.wants/firewalld.service; \
   ln -sf /etc/systemd/system/nut-netclient-configure.service \
     /etc/systemd/system/multi-user.target.wants/nut-netclient-configure.service; \
+  ln -sf /etc/systemd/system/nick-home-ownership.service \
+    /etc/systemd/system/multi-user.target.wants/nick-home-ownership.service; \
   ln -sf /etc/systemd/system/apply-skel.service \
     /etc/systemd/system/multi-user.target.wants/apply-skel.service; \
   ln -sf /etc/systemd/system/system-flatpaks.service \
