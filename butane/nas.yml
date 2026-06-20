@@ -15,6 +15,8 @@ kernel_arguments:
 
 passwd:
   groups:
+    - name: nick
+      gid: 1000
     - name: qemu
       system: true
   users:
@@ -75,11 +77,9 @@ storage:
     - path: /var/home/nick
       mode: 0700
       user:
-        - id: 1000
-        - name: nick
+        name: nick
       group:
-        - id: 1000
-        - name: nick
+        name: nick
     - path: /var/srv/git
       mode: 0750
       user:
