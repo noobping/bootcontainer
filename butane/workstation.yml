@@ -30,7 +30,7 @@ passwd:
 storage:
   directories:
     - path: /var/home/nick
-      mode: 0755
+      mode: 0700
       user:
         - id: 1000
         - name: nick
