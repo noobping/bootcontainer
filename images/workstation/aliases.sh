@@ -22,3 +22,11 @@ alias yq='podman run --rm -i \
 
 alias flatpak-builder="flatpak run org.flatpak.Builder"
 alias zola="flatpak run org.getzola.zola"
+
+alias just='podman run --rm -it \
+    --userns=keep-id \
+    --user "$(id -u):$(id -g)" \
+    -v "$PWD:/work:Z" \
+    -w /work \
+    --entrypoint /just \
+    ghcr.io/casey/just:latest'
