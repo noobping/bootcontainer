@@ -1,0 +1,11 @@
+storage:
+  directories:
+    - path: /var/lib/rancher/k3s
+      mode: 0700
+
+  files:
+    - path: /etc/hostname
+      overwrite: true
+      contents:
+        inline: |
+          k3s.vm

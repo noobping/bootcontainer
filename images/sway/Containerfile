@@ -1,0 +1,47 @@
+ARG TAG=latest
+ARG IMAGE_NAMESPACE=ghcr.io/noobping
+FROM ${IMAGE_NAMESPACE}/workstation:${TAG}
+
+LABEL org.opencontainers.image.title="Sway"
+LABEL org.opencontainers.image.description="a Sway desktop bootable container"
+
+RUN set -euxo pipefail; \
+  rpm-ostree install -y \
+    bemenu \
+    brightnessctl \
+    clipman \
+    dmenu \
+    fontawesome-6-free-fonts \
+    foot \
+    grim \
+    i3status \
+    jq \
+    libnotify \
+    mako \
+    pass \
+    pass-otp \
+    pavucontrol \
+    playerctl \
+    pulseaudio-utils \
+    qt5ct \
+    slurp \
+    sway \
+    swayidle \
+    swaylock \
+    wl-clipboard \
+    wofi \
+    xdg-user-dirs \
+    xdg-utils \
+    xdg-desktop-portal-wlr; \
+  rm -rf /var/cache/rpm-ostree /var/lib/rpm-ostree/cache /var/cache/dnf; \
+  ostree container commit
+
+COPY skel /etc/skel
+
+RUN set -euxo pipefail; \
+  if grep -q '^XSession=' /var/lib/AccountsService/default; then \
+    sed -i 's/^XSession=.*/XSession=sway/' /var/lib/AccountsService/default; \
+  else \
+    printf '%s\n' 'XSession=sway' >> /var/lib/AccountsService/default; \
+  fi; \
+  ostree container commit

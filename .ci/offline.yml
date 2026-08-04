@@ -16,8 +16,6 @@ steps:
       repo="${CI_REPO:-$PWD}"
       namespace="${CI_IMAGE_NAMESPACE:-localhost:5000/noobping}"
       tls_verify="${CI_REGISTRY_TLS_VERIFY:-false}"
-      uid="${CI_UID:-1000}"
-      gid="${CI_GID:-1000}"
       isolation="${BUILDAH_ISOLATION:-chroot}"
       tmpdir="${TMPDIR:-/tmp}"
       source_url="$(git -C "$repo" config --get remote.origin.url || printf '%s' "$repo")"
@@ -132,7 +130,7 @@ steps:
             || podman volume create "$registry_volume" >/dev/null
           podman run -d \
             --name "$registry_container" \
-            -p "${registry_port}:5000" \
+            -p "127.0.0.1:${registry_port}:5000" \
             -v "${registry_volume}:/var/lib/registry:Z" \
             docker.io/library/registry:2 >/dev/null
         fi
@@ -164,17 +162,13 @@ steps:
 
       build_image() {
         local context="$1"
-        local containerfile="$2"
-        local image="$3"
-        shift 3
+        local image="$2"
+        shift 2
 
         run_buildah bud \
           --pull=always \
           --arch "$image_arch" \
           --isolation="$isolation" \
-          --layers=false \
-          --rm \
-          -f "$containerfile" \
           -t "$image" \
           --label "org.opencontainers.image.source=${source_url}" \
           "$@" \
@@ -190,17 +184,12 @@ steps:
       pushd "$repo" >/dev/null
       mkdir -p dist/ign dist/iso
 
-      build_image ips ips/Containerfile "${namespace}/ips:${image_arch}" \
-        --build-arg "FCOS_STREAM=stable" \
-        --build-arg "UID=${uid}" \
-        --build-arg "GID=${gid}"
+      build_image images/ips "${namespace}/ips:${image_arch}"
 
-      build_image workstation workstation/Containerfile "${namespace}/workstation:${image_arch}" \
+      build_image images/workstation "${namespace}/workstation:${image_arch}" \
         --tls-verify="$tls_verify" \
         --build-arg "IMAGE_NAMESPACE=${namespace}" \
-        --build-arg "TAG=${image_arch}" \
-        --build-arg "UID=${uid}" \
-        --build-arg "GID=${gid}"
+        --build-arg "TAG=${image_arch}"
 
       podman pull --tls-verify="$tls_verify" "${namespace}/workstation:${image_arch}"
       podman tag "${namespace}/workstation:${image_arch}" "${namespace}/workstation:latest"
@@ -269,7 +258,7 @@ steps:
         iso customize \
           --live-ignition dist/ign/setup.ign \
           --dest-ignition dist/ign/workstation.ign \
-          --pre-install butane/detect-device.sh \
+          --pre-install butane/bin/detect-device \
           -o "$custom_iso_container" \
           "$base_iso"
 

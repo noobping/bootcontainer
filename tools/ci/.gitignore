@@ -1,0 +1,11 @@
+**/*.rs.bk
+*.pdb
+*~
+.Trash-*
+.directory
+.fuse_hidden*
+.nfs*
+debug/
+dist/
+rust-project.json
+target/

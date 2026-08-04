@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "storage_pool": {
+    "name": "infrastructure-vms",
+    "path": "/var/srv/ssd/vms",
+    "fcos_stream": "stable"
+  },
+  "vms": [
+    {
+      "name": "k3s",
+      "hostname": "k3s.vm",
+      "mac": "52:54:00:00:00:31",
+      "ignition": "dist/ign/k3s.ign",
+      "vcpus": 12,
+      "memory_mib": 24576,
+      "root_gib": 40,
+      "autostart": true
+    },
+    {
+      "name": "minecraft",
+      "hostname": "minecraft.vm",
+      "mac": "52:54:00:00:00:32",
+      "ignition": "dist/ign/minecraft.ign",
+      "vcpus": 8,
+      "memory_mib": 12288,
+      "root_gib": 40,
+      "autostart": true
+    },
+    {
+      "name": "jellyfin",
+      "hostname": "jellyfin.vm",
+      "mac": "52:54:00:00:00:33",
+      "ignition": "dist/ign/jellyfin.ign",
+      "vcpus": 4,
+      "memory_mib": 8192,
+      "root_gib": 40,
+      "autostart": false
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+#!/bin/sh
+set -eu
+
+state_root=/var/lib/infrastructure/backup/jellyfin
+active_marker="$state_root/jellyfin-was-active"
+finish_hook=/usr/libexec/infrastructure/backup-finish
+
+install -d -o root -g root -m 0700 "$state_root"
+"$finish_hook"
+
+cleanup() {
+  status=$?
+  trap - EXIT INT TERM
+  if [ "$status" -ne 0 ]; then
+    if ! "$finish_hook"; then
+      status=1
+    fi
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+if systemctl is-active --quiet jellyfin.service; then
+  : > "$active_marker"
+  systemctl stop jellyfin.service
+fi
+
+sync

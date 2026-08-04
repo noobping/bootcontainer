@@ -11,14 +11,12 @@ container:
 steps:
   - name: Build and push NAS arch image
     container: false
-    working-directory: nas
+    working-directory: images/nas
     run: |
       set -euo pipefail
 
       namespace="${CI_IMAGE_NAMESPACE:-localhost:5000/noobping}"
       tls_verify="${CI_REGISTRY_TLS_VERIFY:-false}"
-      uid="${CI_UID:-1000}"
-      gid="${CI_GID:-1000}"
       isolation="${BUILDAH_ISOLATION:-chroot}"
       tmpdir="${TMPDIR:-/tmp}"
       source_url="$(git -C "$CI_REPO" config --get remote.origin.url || printf '%s' "$CI_REPO")"
@@ -47,40 +45,19 @@ steps:
         fi
       }
 
-      run_cosign() {
-        if command -v cosign >/dev/null 2>&1; then
-          cosign "$@"
-        elif command -v flatpak-spawn >/dev/null 2>&1; then
-          flatpak-spawn --host cosign "$@"
-        else
-          echo "CI_SIGN_IMAGES=1 but cosign is not installed" >&2
-          exit 1
-        fi
-      }
-
       image="${namespace}/nas:${image_arch}"
-      digest_file="digest-${image_arch}.txt"
 
       run_buildah bud \
         --pull=always \
         --tls-verify="$tls_verify" \
         --arch "$image_arch" \
         --isolation="$isolation" \
-        --layers=false \
-        --rm \
-        -f Containerfile \
         -t "$image" \
         --label "org.opencontainers.image.source=${source_url}" \
         --build-arg "IMAGE_NAMESPACE=${namespace}" \
-        --build-arg "UID=${uid}" \
-        --build-arg "GID=${gid}" \
         .
 
-      run_buildah push --tls-verify="$tls_verify" --digestfile "$digest_file" "$image" "docker://$image"
-
-      if [[ "${CI_SIGN_IMAGES:-}" == "1" ]]; then
-        run_cosign sign --yes --allow-insecure-registry "${image}@$(cat "$digest_file")"
-      fi
+      run_buildah push --tls-verify="$tls_verify" "$image" "docker://$image"
 
       run_buildah rmi "$image" >/dev/null 2>&1 || true
       run_buildah prune -f >/dev/null 2>&1 || true

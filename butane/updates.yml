@@ -17,6 +17,8 @@ systemd:
         [Service]
         Type=oneshot
         ExecStart=/usr/bin/rpm-ostree upgrade
+        Restart=on-failure
+        RestartSec=30
 
         [Install]
         WantedBy=multi-user.target
@@ -66,7 +68,9 @@ systemd:
         [Service]
         Type=oneshot
         TimeoutStartSec=0
-        ExecStart=/usr/bin/fwupdmgr update -y || true
+        StandardOutput=journal+console
+        StandardError=journal+console
+        ExecStart=-/usr/bin/fwupdmgr update --assume-yes --no-reboot-check
 
         [Install]
         WantedBy=halt.target reboot.target shutdown.target

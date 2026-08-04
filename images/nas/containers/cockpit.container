@@ -1,0 +1,22 @@
+[Unit]
+Description=Podman - cockpit web service
+
+[Container]
+Image=quay.io/cockpit/ws:latest
+AutoUpdate=registry
+Memory=512M
+PidsLimit=512
+PodmanArgs=--privileged --pid=host --network=host -v /:/host
+Entrypoint=/container/label-run
+Exec=--port 443
+
+[Service]
+Restart=always
+RestartSec=5
+TimeoutStartSec=900
+MemoryHigh=768M
+MemoryMax=1G
+CPUQuota=100%
+
+[Install]
+WantedBy=default.target

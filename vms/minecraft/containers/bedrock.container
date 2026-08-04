@@ -1,0 +1,26 @@
+[Unit]
+Description=Minecraft Bedrock server
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=docker.io/itzg/minecraft-bedrock-server:2026.5.3@sha256:d0aa4e6726adba217e6a38fcc56320ac948272f06fc21b8a0788dc8f56edaad7
+Environment=EULA=TRUE
+Environment=TZ=Europe/Amsterdam
+Memory=2G
+User=1003
+Group=1003
+PidsLimit=1024
+Network=host
+Volume=minecraft-bedrock.volume:/data
+ShmSize=2g
+
+[Service]
+Restart=always
+RestartSec=10
+TimeoutStartSec=180
+TimeoutStopSec=180
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target
