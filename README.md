@@ -16,23 +16,28 @@ From GNOME and Sway-based workstations to headless servers and storage nodes, th
 
 Nodes automatically configure themselves at first boot and continuously maintain their desired state.
 
-## Pipeline
-
-Portable checks and the local-only offline installer build use
-[Pipeline](https://github.com/noobping/pipeline) and ordinary Just recipes:
+## Commands
 
 ```sh
-pipeline check
-pipeline offline
+pipeline check    # run whitespace and shell checks in parallel
+pipeline build    # check, then build the x86_64 offline Workstation installer
+pipeline offline  # build the same installer after the checks
 ```
 
-`check` runs its independent jobs in parallel. `offline` builds the x86_64
-Workstation ISO with its bootc image embedded and requires host Podman and
-Buildah. It defaults to `localhost:5000/noobping`; override `IMAGE_NAMESPACE`,
-`REGISTRY_TLS_VERIFY`, `LOCAL_REGISTRY_CONTAINER`, or `LOCAL_REGISTRY_VOLUME`
-when needed.
+`build` and `offline` start or reuse a local registry, build the IPS and
+Workstation images, customize the Fedora CoreOS ISO, and write:
 
-The portable checks can also run without a host Pipeline installation:
+```text
+dist/iso/workstation-offline-x86_64.iso
+dist/iso/workstation-offline-x86_64.iso.sha256
+```
+
+It requires host Podman and Buildah and defaults to
+`IMAGE_NAMESPACE=localhost:5000/noobping`.
+
+## Container and GitHub
+
+The portable checks can run without installing Pipeline on the host:
 
 ```sh
 podman run --rm --userns=keep-id \
@@ -42,5 +47,6 @@ podman run --rm --userns=keep-id \
   ghcr.io/noobping/pipeline:continuous check
 ```
 
-The offline recipe intentionally runs on the host because it builds and embeds
-other container images.
+[The Pipeline workflow](.github/workflows/pipeline.yml) runs the same `check`
+through the Pipeline GitHub Action. Run `build` or `offline` on the host
+because they launch Podman and Buildah and create large artifacts.
