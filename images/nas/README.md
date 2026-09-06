@@ -25,12 +25,23 @@ ssh nick@k3s.vm 'findmnt -t nfs,nfs4 && systemctl is-active cachefilesd.service'
 replaces that target atomically. Link a repository to the same executable with:
 
 ```sh
+common_dir="$(git rev-parse --path-format=absolute --git-common-dir)"
+install -d "$common_dir/pipeline"
+cat > "$common_dir/pipeline/config.yml" <<'EOF'
+version: 1
+hooks:
+  incoming: trusted
+  trusted-ref: HEAD
+EOF
 pipeline add pre-receive --link-pipeline --copy-just
 ```
 
 That form is suitable for bare Git repositories: Pipeline remains linked to the
 atomically updated system binary, while Just is copied into the repository so a
-temporary image-extracted executable is never linked.
+temporary image-extracted executable is never linked. Install it after the bare
+repository's default branch exists. The trusted policy keeps hook definitions on
+the current default branch instead of accepting replacements from the push being
+checked.
 
 ## Backups
 
