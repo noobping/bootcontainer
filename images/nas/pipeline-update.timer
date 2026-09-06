@@ -1,5 +1,5 @@
 [Unit]
-Description=Update ci daily
+Description=Update Pipeline daily
 
 [Timer]
 OnCalendar=daily

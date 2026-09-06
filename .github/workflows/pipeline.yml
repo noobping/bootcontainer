@@ -1,0 +1,31 @@
+name: Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request: {}
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pipeline-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check with Pipeline
+        uses: noobping/pipeline@continuous
+        with:
+          arguments: |
+            --cap-jobs
+            2
+            check

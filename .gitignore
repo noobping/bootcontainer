@@ -2,7 +2,6 @@
 *.bu
 *.ign
 *.iso
-*.iso
 *.iso.*
 *.qcow2
 digest*.txt

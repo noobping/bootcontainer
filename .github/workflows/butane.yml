@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CI_IMAGE_NAMESPACE: ghcr.io/noobping
+  IMAGE_NAMESPACE: ghcr.io/noobping
 
 jobs:
   build:
@@ -63,10 +63,10 @@ jobs:
           set -euxo pipefail
           yq ea '. as $item ireduce ({}; . *+ $item)' butane/base.yml butane/setup.yml > butane/setup.bu
           yq ea '. as $item ireduce ({}; . *+ $item)' butane/base.yml butane/updates.yml butane/${{ matrix.profile.butane }}.yml > butane/${{ matrix.profile.name }}.bu
-          sed "s#__CI_IMAGE_NAMESPACE__#${CI_IMAGE_NAMESPACE}#g" butane/setup.bu > butane/setup.rendered.bu
+          sed "s#__IMAGE_NAMESPACE__#${IMAGE_NAMESPACE}#g" butane/setup.bu > butane/setup.rendered.bu
           sed \
-            -e "s#__CI_IMAGE_NAMESPACE__#${CI_IMAGE_NAMESPACE}#g" \
-            -e "s#__CI_BOOTC_IMAGE__#${{ matrix.profile.bootc_image }}#g" \
+            -e "s#__IMAGE_NAMESPACE__#${IMAGE_NAMESPACE}#g" \
+            -e "s#__BOOTC_IMAGE__#${{ matrix.profile.bootc_image }}#g" \
             butane/${{ matrix.profile.name }}.bu > butane/${{ matrix.profile.name }}.rendered.bu
 
       - name: Build ignition files
@@ -166,8 +166,8 @@ jobs:
               > "butane/${guest}.bu"
 
             sed \
-              -e "s#__CI_IMAGE_NAMESPACE__#${CI_IMAGE_NAMESPACE}#g" \
-              -e "s#__CI_BOOTC_IMAGE__#${guest}#g" \
+              -e "s#__IMAGE_NAMESPACE__#${IMAGE_NAMESPACE}#g" \
+              -e "s#__BOOTC_IMAGE__#${guest}#g" \
               "butane/${guest}.bu" \
               > "butane/${guest}.rendered.bu"
 

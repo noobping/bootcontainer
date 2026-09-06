@@ -1,0 +1,19 @@
+version: 1
+
+on:
+  pre-commit: [check]
+  pre-push: [check]
+  pre-receive: [check]
+
+pipelines:
+  check:
+    jobs:
+      whitespace:
+        just: check-whitespace
+      shell:
+        just: check-shell
+
+  offline:
+    jobs:
+      workstation:
+        just: offline-workstation

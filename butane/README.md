@@ -15,12 +15,12 @@ for role in k3s minecraft jellyfin; do
 done
 ```
 
-The Sway profile reuses `butane/workstation.yml`; render `__CI_BOOTC_IMAGE__` as `sway` for `sway.ign` and as `workstation` for `workstation.ign`.
+The Sway profile reuses `butane/workstation.yml`; render `__BOOTC_IMAGE__` as `sway` for `sway.ign` and as `workstation` for `workstation.ign`.
 
 Render placeholders:
 
 ```sh
-CI_IMAGE_NAMESPACE=ghcr.io/noobping
+IMAGE_NAMESPACE=ghcr.io/noobping
 
 render_butane() {
     input="$1"
@@ -28,8 +28,8 @@ render_butane() {
     bootc_image="$3"
 
     sed \
-        -e "s#__CI_IMAGE_NAMESPACE__#${CI_IMAGE_NAMESPACE}#g" \
-        -e "s#__CI_BOOTC_IMAGE__#${bootc_image}#g" \
+        -e "s#__IMAGE_NAMESPACE__#${IMAGE_NAMESPACE}#g" \
+        -e "s#__BOOTC_IMAGE__#${bootc_image}#g" \
         "$input" > "$output"
 }
 

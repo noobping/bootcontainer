@@ -42,13 +42,12 @@ RUN rpm-ostree install -y \
 
 COPY --chmod=0600 nftables /etc/nftables/rules
 COPY --chmod=0755 bin/todo bin/vm-bridge bin/vm-deploy /usr/bin/
-COPY --chmod=0755 bin/artifacts-prepare bin/btrfs-backup bin/ci-update bin/nut-configure /usr/libexec/infrastructure/
+COPY --chmod=0755 bin/artifacts-prepare bin/btrfs-backup bin/pipeline-update bin/nut-configure /usr/libexec/infrastructure/
 COPY artifacts-prepare.service /etc/systemd/system/artifacts-prepare.service
 COPY btrfs-backup.service /etc/systemd/system/btrfs-backup.service
 COPY btrfs-backup.timer /etc/systemd/system/btrfs-backup.timer
-COPY ci-update.service /etc/systemd/system/ci-update.service
-COPY ci-update.timer /etc/systemd/system/ci-update.timer
-COPY ci.yml /etc/ci.yml
+COPY pipeline-update.service /etc/systemd/system/pipeline-update.service
+COPY pipeline-update.timer /etc/systemd/system/pipeline-update.timer
 COPY containers /etc/containers/systemd
 COPY fstab.txt /etc/fstab
 COPY libvirtd.conf /etc/libvirt/libvirtd.conf
@@ -82,11 +81,11 @@ RUN set -euxo pipefail; \
     /etc/systemd/system/multi-user.target.wants/nfs-server.service; \
   ln -sf /etc/systemd/system/nut-configure.service \
     /etc/systemd/system/multi-user.target.wants/nut-configure.service; \
-  ln -sf /etc/systemd/system/ci-update.service \
-    /etc/systemd/system/multi-user.target.wants/ci-update.service; \
+  ln -sf /etc/systemd/system/pipeline-update.service \
+    /etc/systemd/system/multi-user.target.wants/pipeline-update.service; \
   ln -sf /etc/systemd/system/btrfs-backup.timer \
     /etc/systemd/system/timers.target.wants/btrfs-backup.timer; \
-  ln -sf /etc/systemd/system/ci-update.timer \
-    /etc/systemd/system/timers.target.wants/ci-update.timer; \
-  ln -sf /var/srv/ssd/artifacts/ci /usr/bin/ci; \
+  ln -sf /etc/systemd/system/pipeline-update.timer \
+    /etc/systemd/system/timers.target.wants/pipeline-update.timer; \
+  ln -sf /var/srv/ssd/artifacts/pipeline /usr/bin/pipeline; \
   ostree container commit

@@ -122,8 +122,8 @@ render_ignition() (
       butane/vm.yml \
       "butane/$guest.yml" \
     | sed \
-        -e 's#__CI_IMAGE_NAMESPACE__#ghcr.io/noobping#g' \
-        -e "s#__CI_BOOTC_IMAGE__#$guest#g" \
+        -e 's#__IMAGE_NAMESPACE__#ghcr.io/noobping#g' \
+        -e "s#__BOOTC_IMAGE__#$guest#g" \
     | podman run --rm --interactive \
         --security-opt label=disable \
         --volume "$repository_root:/work:ro" \

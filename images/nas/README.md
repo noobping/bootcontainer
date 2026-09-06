@@ -18,15 +18,19 @@ sudo exportfs -v
 ssh nick@k3s.vm 'findmnt -t nfs,nfs4 && systemctl is-active cachefilesd.service'
 ```
 
-## CI
+## Pipeline
 
-`ci-update.service` installs the latest verified x64 or arm64 binary at
-`/var/srv/ssd/artifacts/ci`. `/usr/bin/ci` links to it, and the daily timer
+`pipeline-update.service` installs the latest verified amd64 or arm64 binary at
+`/var/srv/ssd/artifacts/pipeline`. `/usr/bin/pipeline` links to it, and the daily timer
 replaces that target atomically. Link a repository to the same executable with:
 
 ```sh
-ci install -m link
+pipeline add pre-receive --link-pipeline --copy-just
 ```
+
+That form is suitable for bare Git repositories: Pipeline remains linked to the
+atomically updated system binary, while Just is copied into the repository so a
+temporary image-extracted executable is never linked.
 
 ## Backups
 

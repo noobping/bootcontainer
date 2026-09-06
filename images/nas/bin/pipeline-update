@@ -2,18 +2,18 @@
 set -euo pipefail
 
 case $(uname -m) in
-  x86_64) asset=ci-linux-x64 ;;
-  aarch64) asset=ci-linux-arm64 ;;
+  x86_64) asset=pipeline-linux-amd64 ;;
+  aarch64) asset=pipeline-linux-arm64 ;;
   *)
     echo "Unsupported architecture: $(uname -m)" >&2
     exit 1
     ;;
 esac
 
-release=https://github.com/noobping/infrastructure/releases/download/continuous
+release=https://github.com/noobping/pipeline/releases/download/continuous
 artifacts=/var/srv/ssd/artifacts
-target=$artifacts/ci
-temporary=$(mktemp -d "$artifacts/.ci-update.XXXXXX")
+target=$artifacts/pipeline
+temporary=$(mktemp -d "$artifacts/.pipeline-update.XXXXXX")
 trap 'rm -rf -- "$temporary"' EXIT
 
 curl -fsSL --retry 3 -o "$temporary/$asset" "$release/$asset"
@@ -26,7 +26,7 @@ curl -fsSL --retry 3 -o "$temporary/$asset.sha256" "$release/$asset.sha256"
 chmod 0755 "$temporary/$asset"
 
 if [[ -e $target ]] && cmp --silent "$temporary/$asset" "$target"; then
-  echo "ci is already current"
+  echo "pipeline is already current"
   exit 0
 fi
 
