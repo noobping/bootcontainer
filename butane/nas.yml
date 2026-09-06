@@ -15,6 +15,8 @@ kernel_arguments:
 
 passwd:
   groups:
+    - name: nick
+      gid: 1000
     - name: qemu
       system: true
   users:
@@ -51,6 +53,8 @@ passwd:
       home_dir: /var/srv/music
       shell: /usr/bin/nologin
     - name: nick
+      home_dir: /var/home/nick
+      primary_group: nick
       password_hash: $6$7fNbJeEeffQ7h36Y$u2tMk5CyjP/Q3pq.XFjFvDty0aKOUAhf4jsobML8rjlD2uBsGw44RTyG7qNcJhMr1GSXEdJ7ZHJGsZj2/Uyua1
       uid: 1000
       groups:
@@ -70,6 +74,12 @@ passwd:
 
 storage:
   directories:
+    - path: /var/home/nick
+      mode: 0700
+      user:
+        name: nick
+      group:
+        name: nick
     - path: /var/srv/git
       mode: 0750
       user:
