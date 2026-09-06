@@ -11,7 +11,7 @@
 
 Declarative infrastructure for workstations and servers.
 
-This project delivers fully automated, immutable system images built on Fedora CoreOS (FCOS).  
+This project delivers fully automated, immutable system images built on Fedora CoreOS (FCOS).
 From GNOME and Sway-based workstations to headless servers and storage nodes, the entire stack is defined as code using Butane, bootable containers, and CI/CD pipelines.
 
 Nodes automatically configure themselves at first boot and continuously maintain their desired state.
