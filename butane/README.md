@@ -5,11 +5,13 @@ VM guests. Workstation and Sway share `workstation.yml`; their rendered
 `__BOOTC_IMAGE__` values select the final image.
 
 From the repository root, build every image, render and validate every
-Ignition config, and create the host installers with:
+Ignition config, and create the AMD64 and ARM64 host installers with:
 
 ```sh
-just offline
+just offline both
 ```
+
+Omit `both` to build only the host architecture.
 
 Generated Butane files are written to `dist/butane`, Ignition files to
 `dist/ign`, and NAS, Workstation, and Sway ISOs to `dist/iso`. Each ISO embeds

@@ -19,32 +19,46 @@ Nodes automatically configure themselves at first boot and continuously maintain
 ## Commands
 
 ```sh
-pipeline check  # run whitespace and shell checks in parallel
-just offline    # build every stable image and offline installer
+pipeline check       # run whitespace and shell checks in parallel
+just offline         # build everything for the host architecture
+just offline both    # build everything for AMD64 and ARM64
 ```
 
 The Workstation, Sway, and NAS images expose `pipeline` as a Podman-backed shell
 alias. It pulls a newer `continuous` image when available, mounts the current
 directory, and never installs Pipeline on the host.
 
-`just offline` starts or reuses a local registry and builds the native
-architecture of IPS, Workstation, Sway, NAS, the VM base, K3s, Minecraft, and
-Jellyfin. Independent image branches build in parallel. It then renders all
-Ignition configs and embeds each host image in its installer (`ARCH` is
-`x86_64` or `aarch64`):
+`just offline` starts or reuses a local registry and builds IPS, Workstation,
+Sway, NAS, the VM base, K3s, Minecraft, and Jellyfin for the host architecture.
+Pass `both`, `amd64`, or `arm64` to select another build:
+
+```sh
+just offline both
+just offline amd64
+just offline arm64
+```
+
+Architecture graphs run sequentially so their shared artifacts and tags cannot
+race; independent image branches within each graph build in parallel. Every
+image is published with its `:amd64` or `:arm64` tag. A `both` build also
+publishes `:latest` as a multi-architecture manifest. It renders all Ignition
+configs and embeds the matching architecture image in each installer:
 
 ```text
-dist/iso/nas-offline-ARCH.iso
-dist/iso/sway-offline-ARCH.iso
-dist/iso/workstation-offline-ARCH.iso
+dist/iso/nas-offline-{x86_64,aarch64}.iso
+dist/iso/sway-offline-{x86_64,aarch64}.iso
+dist/iso/workstation-offline-{x86_64,aarch64}.iso
 ```
 
 Each ISO has a matching `.sha256`; generated Ignition files are in `dist/ign`.
-Use `just offline-workstation` for only the IPS and Workstation path. These
-recipes require host Podman and Buildah and default to
-`IMAGE_NAMESPACE=localhost:5000/noobping`. Creating the media requires network
+Use `just offline-workstation [architecture]` for only the IPS and Workstation
+path. These recipes require host Podman and Buildah and default to
+`IMAGE_NAMESPACE=localhost:5000/noobping`. Building a non-native architecture
+also requires working QEMU/binfmt container emulation on the host; the recipe
+checks this before starting the image graph. Creating the media requires network
 access: image builds refresh their upstream bases, and the recipe downloads a
-Fedora CoreOS ISO when one is not already present.
+Fedora CoreOS ISO when one is not already present. The ARM64 NAS image and ISO
+are supported, but its bundled libvirt VM deployment remains x86_64-only.
 
 ## Container and GitHub
 

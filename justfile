@@ -21,19 +21,20 @@ check-shell:
     done < <(git ls-files -z)
     exit "$failed"
 
-# Build every stable image and all offline installer artifacts for this host.
-offline: (_offline "all")
+# Build every stable image and all offline installers for an architecture.
+offline architecture="native": (_offline "all" architecture)
 
 # Build only the Workstation offline installer.
-offline-workstation: (_offline "workstation")
+offline-workstation architecture="native": (_offline "workstation" architecture)
 
 [private]
-_offline target:
+_offline target architecture:
     #!/usr/bin/env bash
     set -euo pipefail
 
     repo='{{ justfile_directory() }}'
-    target='{{ target }}'
+    target={{ quote(target) }}
+    architecture={{ quote(architecture) }}
     namespace="${IMAGE_NAMESPACE:-localhost:5000/noobping}"
     tls_verify="${REGISTRY_TLS_VERIFY:-false}"
     isolation="${BUILDAH_ISOLATION:-chroot}"
@@ -50,16 +51,38 @@ _offline target:
 
     case "$(uname -m)" in
         x86_64)
-            image_arch=amd64
-            coreos_arch=x86_64
+            native_arch=amd64
             ;;
         aarch64|arm64)
-            image_arch=arm64
-            coreos_arch=aarch64
+            native_arch=arm64
             ;;
         *)
             echo "offline does not support $(uname -m)" >&2
             exit 1
+            ;;
+    esac
+
+    case "$architecture" in
+        native)
+            build_arches=("$native_arch")
+            ;;
+        both)
+            if [[ "$native_arch" == amd64 ]]; then
+                build_arches=(amd64 arm64)
+            else
+                build_arches=(arm64 amd64)
+            fi
+            ;;
+        amd64|x86_64)
+            build_arches=(amd64)
+            ;;
+        arm64|aarch64)
+            build_arches=(arm64)
+            ;;
+        *)
+            echo "unsupported architecture: $architecture" >&2
+            echo "expected native, amd64, arm64, or both" >&2
+            exit 2
             ;;
     esac
 
@@ -109,6 +132,43 @@ _offline target:
             run_podman run --rm \
                 -v "$repo:/work:Z" -w /work \
                 docker.io/mikefarah/yq:4.45.1 "$@"
+        fi
+    }
+
+    set_arch() {
+        image_arch="$1"
+        case "$image_arch" in
+            amd64)
+                coreos_arch=x86_64
+                expected_machine=x86_64
+                ;;
+            arm64)
+                coreos_arch=aarch64
+                expected_machine=aarch64
+                ;;
+        esac
+    }
+
+    check_arch_runtime() {
+        local requested_arch="$1"
+        local actual
+
+        if [[ "$requested_arch" == "$native_arch" ]]; then
+            return 0
+        fi
+
+        set_arch "$requested_arch"
+        printf 'Checking %s container emulation...\n' "$requested_arch"
+        if ! actual="$(run_podman run --rm --pull=missing \
+            --arch "$requested_arch" \
+            quay.io/fedora/fedora-minimal:latest uname -m)"; then
+            echo "cannot execute $requested_arch containers" >&2
+            echo "enable QEMU/binfmt on the host or build on a native machine" >&2
+            exit 1
+        fi
+        if [[ "$actual" != "$expected_machine" ]]; then
+            echo "expected $expected_machine emulation, got $actual" >&2
+            exit 1
         fi
     }
 
@@ -205,7 +265,6 @@ _offline target:
         local context="$1"
         local name="$2"
         local arch_image="${namespace}/${name}:${image_arch}"
-        local latest_image="${namespace}/${name}:latest"
         shift 2
 
         printf '\n==> Building %s\n' "$arch_image"
@@ -221,10 +280,49 @@ _offline target:
 
         run_buildah push --tls-verify="$tls_verify" \
             "$arch_image" "docker://$arch_image"
-        run_buildah rmi "$latest_image" >/dev/null 2>&1 || true
-        run_buildah tag "$arch_image" "$latest_image"
-        run_buildah push --tls-verify="$tls_verify" \
-            "$latest_image" "docker://$latest_image"
+    }
+
+    remove_local_ref() {
+        local image="$1"
+
+        run_buildah manifest rm "$image" >/dev/null 2>&1 || true
+        run_buildah rmi "$image" >/dev/null 2>&1 || true
+    }
+
+    publish_single_latest() {
+        local architecture="$1"
+        local name arch_image latest_image
+        shift
+
+        for name in "$@"; do
+            arch_image="${namespace}/${name}:${architecture}"
+            latest_image="${namespace}/${name}:latest"
+            printf '\n==> Publishing %s from %s\n' "$latest_image" "$arch_image"
+            remove_local_ref "$latest_image"
+            run_buildah tag "$arch_image" "$latest_image"
+            run_buildah push --tls-verify="$tls_verify" \
+                "$latest_image" "docker://$latest_image"
+        done
+    }
+
+    publish_multiarch_latest() {
+        local name architecture latest_image manifest_image
+
+        for name in "$@"; do
+            latest_image="${namespace}/${name}:latest"
+            manifest_image="localhost/pipeline-offline-${name}:${BASHPID}"
+            printf '\n==> Publishing multi-architecture %s\n' "$latest_image"
+            remove_local_ref "$latest_image"
+            remove_local_ref "$manifest_image"
+            run_buildah manifest create "$manifest_image"
+            for architecture in amd64 arm64; do
+                run_buildah manifest add "$manifest_image" \
+                    "${namespace}/${name}:${architecture}"
+            done
+            run_buildah manifest push --all --tls-verify="$tls_verify" \
+                "$manifest_image" "docker://$latest_image"
+            run_buildah manifest rm "$manifest_image" >/dev/null
+        done
     }
 
     build_ips() {
@@ -241,7 +339,8 @@ _offline target:
     build_nas() {
         build_image images/nas nas \
             --tls-verify="$tls_verify" \
-            --build-arg "IMAGE_NAMESPACE=${namespace}"
+            --build-arg "IMAGE_NAMESPACE=${namespace}" \
+            --build-arg "TAG=${image_arch}"
     }
 
     build_vm() {
@@ -376,9 +475,10 @@ _offline target:
         rm -f "$out_iso" "${out_iso}.sha256"
 
         run_podman pull --tls-verify="$tls_verify" \
-            "${namespace}/${profile}:latest"
+            --arch "$image_arch" \
+            "${namespace}/${profile}:${image_arch}"
         run_podman save --format oci-archive -o "$archive" \
-            "${namespace}/${profile}:latest"
+            "${namespace}/${profile}:${image_arch}"
         (
             cd "$archive_dir"
             sha256sum "${profile}.ociarchive" \
@@ -414,20 +514,32 @@ _offline target:
         rm -rf -- "$profile_dir"
     }
 
-    ensure_registry
-
     cd "$repo"
     mkdir -p dist/butane dist/ign dist/iso
 
-    build_ips
-
     if [[ "$target" == all ]]; then
-        run_parallel build_workstation_branch build_nas build_vm_branch
         profiles=(nas workstation sway)
+        image_names=(ips workstation sway nas vm k3s minecraft jellyfin)
     else
-        build_workstation
         profiles=(workstation)
+        image_names=(ips workstation)
     fi
+
+    if ! command -v flock >/dev/null 2>&1; then
+        echo "flock is required to coordinate offline builds" >&2
+        exit 1
+    fi
+    exec 9>dist/.offline.lock
+    if ! flock -n 9; then
+        echo "another offline build is already running in $repo" >&2
+        exit 1
+    fi
+
+    for requested_arch in "${build_arches[@]}"; do
+        check_arch_runtime "$requested_arch"
+    done
+
+    ensure_registry
 
     # Keep the staging directory under the checkout so host-side Podman can see
     # it even when Just is running inside a Flatpak sandbox with a private /tmp.
@@ -458,19 +570,39 @@ _offline target:
         done
     fi
 
-    if ! ls -1 fedora-coreos-*-live-iso."${coreos_arch}".iso >/dev/null 2>&1; then
-        run_podman run --rm \
-            --userns=keep-id \
-            --user "$(id -u):$(id -g)" \
-            -v "$repo:/work:Z" -w /work \
-            quay.io/coreos/coreos-installer:release \
-            download -s stable -a "$coreos_arch" -p metal -f iso -C /work --decompress
-    fi
+    for requested_arch in "${build_arches[@]}"; do
+        set_arch "$requested_arch"
+        printf '\n========== Building %s (%s) ==========\n' \
+            "$image_arch" "$coreos_arch"
 
-    base_iso="$(ls -1t fedora-coreos-*-live-iso."${coreos_arch}".iso | sed -n '1p')"
-    for profile in "${profiles[@]}"; do
-        build_installer "$profile"
+        build_ips
+
+        if [[ "$target" == all ]]; then
+            run_parallel build_workstation_branch build_nas build_vm_branch
+        else
+            build_workstation
+        fi
+
+        if ! ls -1 fedora-coreos-*-live-iso."${coreos_arch}".iso >/dev/null 2>&1; then
+            run_podman run --rm \
+                --userns=keep-id \
+                --user "$(id -u):$(id -g)" \
+                -v "$repo:/work:Z" -w /work \
+                quay.io/coreos/coreos-installer:release \
+                download -s stable -a "$coreos_arch" -p metal -f iso -C /work --decompress
+        fi
+
+        base_iso="$(ls -1t fedora-coreos-*-live-iso."${coreos_arch}".iso | sed -n '1p')"
+        for profile in "${profiles[@]}"; do
+            build_installer "$profile"
+        done
     done
 
-    printf '\nBuilt %s images in %s and installer artifacts in %s/dist.\n' \
-        "$target" "$namespace" "$repo"
+    if (( ${#build_arches[@]} == 2 )); then
+        publish_multiarch_latest "${image_names[@]}"
+    else
+        publish_single_latest "${build_arches[0]}" "${image_names[@]}"
+    fi
+
+    printf '\nBuilt %s images for %s in %s and installer artifacts in %s/dist.\n' \
+        "$target" "${build_arches[*]}" "$namespace" "$repo"
