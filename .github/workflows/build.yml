@@ -4,14 +4,6 @@ on:
   push:
     branches: [main, master]
     paths:
-      - "butane/**"
-      - "images/**"
-      - "vms/**"
-      - "justfile"
-      - "online.just"
-      - "pipeline.yml"
-      - ".github/actions/**"
-      - ".github/workflows/online.yml"
       - "!**/*.md"
       - "!.gitlab-ci.yml"
   schedule:
