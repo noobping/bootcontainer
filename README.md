@@ -67,18 +67,17 @@ and contain the image archive; online ISO names do not.
 
 ## GitHub Actions
 
-GitHub uses small Pipeline targets: every image/architecture pair and every
-installer/architecture pair is a separate Actions job on a native runner.
-Actions provides the parallelism and dependency waves. Dependent image jobs
-use run-scoped registry tags; Actions artifacts carry their digests and the
-completed media. Each disk-heavy job first cleans the hosted runner and moves
-container storage to `/mnt`. Stable failures stop publication; the separate
-next-stream jobs remain allowed to fail.
+GitHub uses small Pipeline targets: every online image/architecture pair and
+every online installer/architecture pair is a separate Actions job on a native
+runner. Actions provides the parallelism and dependency waves. Dependent image
+jobs use run-scoped registry tags; Actions artifacts carry their digests and
+the completed media. Each disk-heavy job first cleans the hosted runner and
+moves container storage to `/mnt`. Stable failures stop publication; the
+separate next-stream jobs remain allowed to fail.
 
-The manual offline workflow starts six independent jobs: NAS, Workstation, and
-Sway for AMD64 and ARM64. Each job builds only that installer's dependency
-closure and uploads one ISO plus its checksum. Local aggregate commands remain
-simple and may run independent Just branches in parallel on one machine.
+There is no offline Actions workflow because the images and embedded installers
+are too large for GitHub-hosted builds. Use `pipeline offline` locally, or one
+of the profile-specific offline commands above.
 
 ## Publishing and build environment
 

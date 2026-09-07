@@ -33,7 +33,6 @@ check-just:
         "_offline workstation both"
         "_offline nas both"
         "_offline sway both"
-        "offline-task"
     )
     for command in "${commands[@]}"; do
         read -r -a arguments <<< "$command"
@@ -74,15 +73,6 @@ offline-nas-build:
 # Build the offline Sway image and installers for both architectures.
 offline-sway-build:
     @{{ quote(just_executable()) }} _offline sway both
-
-# Build one offline installer selected by the build environment.
-offline-task:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    profile="${BUILD_PROFILE:?BUILD_PROFILE is required}"
-    architecture="${BUILD_ARCHITECTURE:?BUILD_ARCHITECTURE is required}"
-    just={{ quote(just_executable()) }}
-    exec "$just" _offline "$profile" "$architecture"
 
 [private]
 _offline target architecture:

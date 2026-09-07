@@ -88,8 +88,3 @@ pipelines:
     jobs:
       publish:
         just: online::release-assets
-
-  offline-task:
-    jobs:
-      build:
-        just: offline-task
