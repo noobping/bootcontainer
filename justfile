@@ -21,14 +21,14 @@ check-shell:
     done < <(git ls-files -z)
     exit "$failed"
 
-offline target="all" architecture="native": (_offline target architecture)
+offline selection="all" architecture="native": (_offline selection architecture)
 
 [private]
 _offline target architecture:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    repo='{{ justfile_directory() }}'
+    repo={{ quote(justfile_directory()) }}
     target={{ quote(target) }}
     architecture={{ quote(architecture) }}
     namespace="${IMAGE_NAMESPACE:-localhost:5000/noobping}"
@@ -39,6 +39,14 @@ _offline target architecture:
 
     case "$target" in
         all|workstation) ;;
+        native|both|amd64|x86_64|arm64|aarch64)
+            if [[ "$architecture" != native ]]; then
+                echo "architecture specified twice: $target $architecture" >&2
+                exit 2
+            fi
+            architecture="$target"
+            target=all
+            ;;
         *)
             echo "unsupported offline target: $target" >&2
             exit 2
