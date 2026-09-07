@@ -3,9 +3,9 @@ name: Build
 on:
   push:
     branches: [main, master]
-    paths:
-      - "!**/*.md"
-      - "!.gitlab-ci.yml"
+    paths-ignore:
+      - "**/*.md"
+      - ".gitlab-ci.yml"
   schedule:
     - cron: "59 00 * * *"
   workflow_dispatch:
