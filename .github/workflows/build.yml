@@ -1,4 +1,4 @@
-name: Online
+name: Build
 
 on:
   push:

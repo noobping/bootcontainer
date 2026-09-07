@@ -1,5 +1,6 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-[![Pipeline](https://github.com/noobping/infrastructure/actions/workflows/pipeline.yml/badge.svg)](https://github.com/noobping/infrastructure/actions/workflows/pipeline.yml)
+[![Check](https://github.com/noobping/infrastructure/actions/workflows/check.yml/badge.svg)](https://github.com/noobping/infrastructure/actions/workflows/check.yml)
+[![Build](https://github.com/noobping/infrastructure/actions/workflows/build.yml/badge.svg)](https://github.com/noobping/infrastructure/actions/workflows/build.yml)
 
 # Infrastructure
 
@@ -49,36 +50,6 @@ Offline builds start or reuse a local registry and embed the matching OCI image
 inside each installer. Architecture graphs run sequentially while independent
 branches within a graph run in parallel.
 
-## Outputs
-
-```text
-dist/online/ign/*.ign
-dist/online/iso/nas-{x86_64,aarch64}.iso
-dist/online/iso/sway-{x86_64,aarch64}.iso
-dist/online/iso/workstation-{x86_64,aarch64}.iso
-dist/ign/*.ign
-dist/iso/nas-offline-{x86_64,aarch64}.iso
-dist/iso/sway-offline-{x86_64,aarch64}.iso
-dist/iso/workstation-offline-{x86_64,aarch64}.iso
-```
-
-Every ISO has a matching `.sha256` file. Offline ISO names include `-offline`
-and contain the image archive; online ISO names do not.
-
-## GitHub Actions
-
-GitHub uses small Pipeline targets: every online image/architecture pair and
-every online installer/architecture pair is a separate Actions job on a native
-runner. Actions provides the parallelism and dependency waves. Dependent image
-jobs use run-scoped registry tags; Actions artifacts carry their digests and
-the completed media. Each disk-heavy job first cleans the hosted runner and
-moves container storage to `/mnt`. Stable failures stop publication; the
-separate next-stream jobs remain allowed to fail.
-
-There is no offline Actions workflow because the images and embedded installers
-are too large for GitHub-hosted builds. Use `pipeline offline` locally, or one
-of the profile-specific offline commands above.
-
 ## Publishing and build environment
 
 Online builds default to `IMAGE_NAMESPACE=ghcr.io/noobping`. Authenticate the
@@ -91,14 +62,6 @@ unsigned test registry and `REGISTRY_TLS_VERIFY=false` for an insecure local
 registry. `pipeline release` publishes the files in `dist/online/iso` to the
 continuous GitHub release with `GH_TOKEN` or `GITHUB_TOKEN`; it uses an
 installed GitHub CLI or its container image.
-
-The installed command and the Workstation/NAS `pipeline` launcher run the same
-configuration. The launcher copies Pipeline and its bundled Just binary from
-`ghcr.io/noobping/pipeline:continuous` into a temporary directory, runs them on
-the host, and removes them afterward. It therefore needs no permanent install
-while still giving recipes access to host tools. Cached images are used by
-default; set `PIPELINE_PULL=newer` to update or `PIPELINE_PULL=never` for a
-strictly disconnected launch.
 
 Image builds need host Podman and Buildah, plus Skopeo for split-runner manifest
 publication, Cosign when signing is enabled, sufficient disk space, and
