@@ -30,3 +30,12 @@ alias just='podman run --rm -it \
     -w /work \
     --entrypoint /just \
     ghcr.io/casey/just:latest'
+
+alias pipeline='podman run --rm \
+    --pull=newer \
+    --userns=keep-id \
+    --user "$(id -u):$(id -g)" \
+    --env HOME=/tmp \
+    -v "$PWD:/work:Z" \
+    -w /work \
+    ghcr.io/noobping/pipeline:continuous'

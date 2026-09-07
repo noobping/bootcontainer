@@ -20,9 +20,11 @@ ssh nick@k3s.vm 'findmnt -t nfs,nfs4 && systemctl is-active cachefilesd.service'
 
 ## Pipeline
 
-`pipeline-update.service` installs the latest verified amd64 or arm64 binary at
-`/var/srv/ssd/artifacts/pipeline`. `/usr/bin/pipeline` links to it, and the daily timer
-replaces that target atomically. Link a repository to the same executable with:
+Interactive shells expose `pipeline` as a Podman-backed alias. It pulls a newer
+`ghcr.io/noobping/pipeline:continuous` image when available; no Pipeline binary,
+update service, or timer is installed on the host.
+
+Install self-contained hooks in a normal or bare repository with:
 
 ```sh
 common_dir="$(git rev-parse --path-format=absolute --git-common-dir)"
@@ -33,12 +35,11 @@ hooks:
   incoming: trusted
   trusted-ref: HEAD
 EOF
-pipeline add pre-receive --link-pipeline --copy-just
+pipeline add --copy
 ```
 
-That form is suitable for bare Git repositories: Pipeline remains linked to the
-atomically updated system binary, while Just is copied into the repository so a
-temporary image-extracted executable is never linked. Install it after the bare
+The container copies Pipeline and Just into the repository, so hooks do not
+depend on the shell alias or a running container. Install them after a bare
 repository's default branch exists. The trusted policy keeps hook definitions on
 the current default branch instead of accepting replacements from the push being
 checked.

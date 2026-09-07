@@ -19,28 +19,33 @@ Nodes automatically configure themselves at first boot and continuously maintain
 ## Commands
 
 ```sh
-pipeline check    # run whitespace and shell checks in parallel
-pipeline build    # check, then build the x86_64 offline Workstation installer
-pipeline offline  # build the same installer after the checks
+pipeline check            # run whitespace and shell checks in parallel
+just offline-workstation  # build the x86_64 offline Workstation installer
 ```
 
-`build` and `offline` start or reuse a local registry, build the IPS and
-Workstation images, customize the Fedora CoreOS ISO, and write:
+The Workstation, Sway, and NAS images expose `pipeline` as a Podman-backed shell
+alias. It pulls a newer `continuous` image when available, mounts the current
+directory, and never installs Pipeline on the host.
+
+`offline-workstation` starts or reuses a local registry, builds the IPS and
+Workstation images, customizes the Fedora CoreOS ISO, and writes:
 
 ```text
 dist/iso/workstation-offline-x86_64.iso
 dist/iso/workstation-offline-x86_64.iso.sha256
 ```
 
-It requires host Podman and Buildah and defaults to
-`IMAGE_NAMESPACE=localhost:5000/noobping`.
+It runs directly through Just because the build requires host Podman and
+Buildah. It defaults to `IMAGE_NAMESPACE=localhost:5000/noobping`.
 
 ## Container and GitHub
 
-The portable checks can run without installing Pipeline on the host:
+The `pipeline` alias is equivalent to:
 
 ```sh
-podman run --rm --userns=keep-id \
+podman run --rm --pull=newer \
+  --userns=keep-id \
+  --user "$(id -u):$(id -g)" \
   --env HOME=/tmp \
   --volume "$PWD:/work:Z" \
   --workdir /work \
@@ -48,5 +53,4 @@ podman run --rm --userns=keep-id \
 ```
 
 [The Pipeline workflow](.github/workflows/pipeline.yml) runs the same `check`
-through the Pipeline GitHub Action. Run `build` or `offline` on the host
-because they launch Podman and Buildah and create large artifacts.
+through the Pipeline GitHub Action.
