@@ -1,78 +1,93 @@
-
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 [![Pipeline](https://github.com/noobping/infrastructure/actions/workflows/pipeline.yml/badge.svg)](https://github.com/noobping/infrastructure/actions/workflows/pipeline.yml)
-[![Butane](https://github.com/noobping/infrastructure/actions/workflows/butane.yml/badge.svg)](https://github.com/noobping/infrastructure/actions/workflows/butane.yml)
-[![IPS](https://github.com/noobping/infrastructure/actions/workflows/ips.yml/badge.svg)](https://github.com/noobping/infrastructure/actions/workflows/ips.yml)
-[![Workstation](https://github.com/noobping/infrastructure/actions/workflows/workstation.yml/badge.svg)](https://github.com/noobping/infrastructure/actions/workflows/workstation.yml)
-[![Sway](https://github.com/noobping/infrastructure/actions/workflows/sway.yml/badge.svg)](https://github.com/noobping/infrastructure/actions/workflows/sway.yml)
-[![NAS](https://github.com/noobping/infrastructure/actions/workflows/nas.yml/badge.svg)](https://github.com/noobping/infrastructure/actions/workflows/nas.yml)
 
 # Infrastructure
 
-Declarative infrastructure for workstations and servers.
-
-This project delivers fully automated, immutable system images built on Fedora CoreOS (FCOS).
-From GNOME and Sway-based workstations to headless servers and storage nodes, the entire stack is defined as code using Butane, bootable containers, and CI/CD pipelines.
-
-Nodes automatically configure themselves at first boot and continuously maintain their desired state.
+Immutable Fedora CoreOS images and installers for workstations, storage nodes,
+and VM guests. Just contains the build recipes; Pipeline connects them into
+dependency graphs.
 
 ## Commands
 
 ```sh
-pipeline check       # run whitespace and shell checks in parallel
-just offline         # build everything for the host architecture
-just offline both    # build everything for AMD64 and ARM64
+pipeline check                 # whitespace and shell validation
+PUBLISH=true pipeline online   # stable images and online media
+PUBLISH=true pipeline next     # Fedora CoreOS next-stream images
+pipeline offline               # all offline media, AMD64 and ARM64
+pipeline offline-workstation   # Workstation offline media, both architectures
+PUBLISH=true pipeline release  # stable build followed by GitHub publication
 ```
 
-The Workstation, Sway, and NAS images expose `pipeline` as a Podman-backed shell
-alias. It pulls a newer `continuous` image when available, mounts the current
-directory, and never installs Pipeline on the host.
+`pipeline online` builds the stable IPS base first, then builds Workstation,
+Sway, NAS, the VM base, K3s, Minecraft, and Jellyfin in dependency order. It
+builds AMD64 and ARM64 images, publishes their architecture tags and
+multi-architecture `:latest` manifests, and creates the online NAS,
+Workstation, and Sway media plus all Ignition configurations. The image and
+media jobs run concurrently; the two architecture graphs and independent image
+branches also run in parallel.
 
-`just offline` starts or reuses a local registry and builds IPS, Workstation,
-Sway, NAS, the VM base, K3s, Minecraft, and Jellyfin for the host architecture.
-Pass `both`, `amd64`, or `arm64` to select another build:
+The Fedora CoreOS `next` stream is deliberately a separate pipeline, so CI can
+allow it to fail without hiding failures in the stable graph. It builds and
+publishes the next IPS, Workstation, and Sway images for both architectures
+with `:next` manifests.
+
+Pipeline's offline commands always build both architectures. For a smaller or
+native-only offline build, call Just directly:
 
 ```sh
-just offline both
+just offline [selection] [architecture]
+
+# selection:    all (default), workstation
+# architecture: native (default), both, amd64, arm64
+just offline workstation amd64
 just offline amd64
-just offline arm64
 ```
 
-Architecture graphs run sequentially so their shared artifacts and tags cannot
-race; independent image branches within each graph build in parallel. Every
-image is published with its `:amd64` or `:arm64` tag. A `both` build also
-publishes `:latest` as a multi-architecture manifest. It renders all Ignition
-configs and embeds the matching architecture image in each installer:
+Offline builds start or reuse a local registry and embed the matching OCI image
+inside each installer. Architecture graphs run sequentially while independent
+branches within a graph run in parallel.
+
+## Outputs
 
 ```text
+dist/online/ign/*.ign
+dist/online/iso/nas-{x86_64,aarch64}.iso
+dist/online/iso/sway-{x86_64,aarch64}.iso
+dist/online/iso/workstation-{x86_64,aarch64}.iso
+dist/ign/*.ign
 dist/iso/nas-offline-{x86_64,aarch64}.iso
 dist/iso/sway-offline-{x86_64,aarch64}.iso
 dist/iso/workstation-offline-{x86_64,aarch64}.iso
 ```
 
-Each ISO has a matching `.sha256`; generated Ignition files are in `dist/ign`.
-Use `just offline workstation [architecture]` for only the IPS and Workstation
-path. These recipes require host Podman and Buildah and default to
-`IMAGE_NAMESPACE=localhost:5000/noobping`. Building a non-native architecture
-also requires working QEMU/binfmt container emulation on the host; the recipe
-checks this before starting the image graph. Creating the media requires network
-access: image builds refresh their upstream bases, and the recipe downloads a
-Fedora CoreOS ISO when one is not already present. The ARM64 NAS image and ISO
-are supported, but its bundled libvirt VM deployment remains x86_64-only.
+Every ISO has a matching `.sha256` file. Offline ISO names include `-offline`
+and contain the image archive; online ISO names do not.
 
-## Container and GitHub
+## Publishing and build environment
 
-The `pipeline` alias is equivalent to:
+Online builds default to `IMAGE_NAMESPACE=ghcr.io/noobping`. Authenticate the
+container tools with `REGISTRY_USER` and `REGISTRY_TOKEN`; in GitHub Actions the
+token comes from `GITHUB_TOKEN`. Publishing to a non-local registry requires
+`PUBLISH=true` and a clean checkout; `ALLOW_DIRTY=true` is available for an
+intentional development build. Manifest signing uses Cosign's ambient keyless
+credentials, including GitHub's OIDC identity. Set `SIGN_IMAGES=false` for an
+unsigned test registry and `REGISTRY_TLS_VERIFY=false` for an insecure local
+registry. `pipeline release` publishes the files in `dist/online/iso` to the
+continuous GitHub release with `GH_TOKEN` or `GITHUB_TOKEN`; it uses an
+installed GitHub CLI or its container image.
 
-```sh
-podman run --rm --pull=newer \
-  --userns=keep-id \
-  --user "$(id -u):$(id -g)" \
-  --env HOME=/tmp \
-  --volume "$PWD:/work:Z" \
-  --workdir /work \
-  ghcr.io/noobping/pipeline:continuous check
-```
+The installed command and the Workstation/NAS `pipeline` launcher run the same
+configuration. The launcher copies Pipeline and its bundled Just binary from
+`ghcr.io/noobping/pipeline:continuous` into a temporary directory, runs them on
+the host, and removes them afterward. It therefore needs no permanent install
+while still giving recipes access to host tools. Cached images are used by
+default; set `PIPELINE_PULL=newer` to update or `PIPELINE_PULL=never` for a
+strictly disconnected launch.
 
-[The Pipeline workflow](.github/workflows/pipeline.yml) runs the same `check`
-through the Pipeline GitHub Action.
+Image builds need host Podman and Buildah, plus Cosign when signing is enabled,
+sufficient disk space, and QEMU/binfmt when building a non-native architecture.
+Release uses an installed GitHub CLI or Podman. Build execution refreshes
+upstream images, packages, and Fedora CoreOS media, so it requires network
+access. “Offline” means the resulting installer can install without a network
+connection. The ARM64 NAS image and installer are supported; its bundled
+libvirt VM deployment remains x86_64-only.

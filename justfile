@@ -1,9 +1,32 @@
+mod online
+
 check-whitespace:
     #!/usr/bin/env bash
     set -euo pipefail
     git diff --check
     git diff --cached --check
     git log -1 --check --format=
+
+check-just:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just={{ quote(just_executable()) }}
+    "$just" --fmt --check
+    script="$(mktemp)"
+    trap 'rm -f -- "$script"' EXIT
+    commands=(
+        "online::_images stable"
+        "online::_images next"
+        "online::_media"
+        "online::_release"
+        "_offline all both"
+        "_offline workstation both"
+    )
+    for command in "${commands[@]}"; do
+        read -r -a arguments <<< "$command"
+        "$just" --dry-run "${arguments[@]}" >/dev/null 2> "$script"
+        bash -n "$script"
+    done
 
 check-shell:
     #!/usr/bin/env bash
@@ -22,6 +45,14 @@ check-shell:
     exit "$failed"
 
 offline selection="all" architecture="native": (_offline selection architecture)
+
+# Build every offline image and installer for both supported architectures.
+offline-build:
+    @{{ quote(just_executable()) }} _offline all both
+
+# Build the offline Workstation image and installers for both architectures.
+offline-workstation-build:
+    @{{ quote(just_executable()) }} _offline workstation both
 
 [private]
 _offline target architecture:

@@ -20,9 +20,12 @@ ssh nick@k3s.vm 'findmnt -t nfs,nfs4 && systemctl is-active cachefilesd.service'
 
 ## Pipeline
 
-Interactive shells expose `pipeline` as a Podman-backed alias. It pulls a newer
-`ghcr.io/noobping/pipeline:continuous` image when available; no Pipeline binary,
-update service, or timer is installed on the host.
+Interactive shells expose `pipeline` through
+`ghcr.io/noobping/pipeline:continuous`. The launcher temporarily extracts
+Pipeline and its bundled Just binary, then runs them on the host so build
+recipes can use host Podman and Buildah. Nothing is permanently installed. It
+uses a cached image by default; set `PIPELINE_PULL=newer` to update or
+`PIPELINE_PULL=never` to require a cached image.
 
 Install self-contained hooks in a normal or bare repository with:
 
@@ -38,11 +41,10 @@ EOF
 pipeline add --copy
 ```
 
-The container copies Pipeline and Just into the repository, so hooks do not
-depend on the shell alias or a running container. Install them after a bare
-repository's default branch exists. The trusted policy keeps hook definitions on
-the current default branch instead of accepting replacements from the push being
-checked.
+`--copy` places Pipeline and Just in the repository, so hooks do not depend on
+the temporary launcher. Install them after a bare repository's default branch
+exists. The trusted policy keeps hook definitions on the current default branch
+instead of accepting replacements from the push being checked.
 
 ## Backups
 

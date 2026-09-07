@@ -29,5 +29,5 @@ jobs:
         with:
           arguments: |
             --cap-jobs
-            2
+            3
             check

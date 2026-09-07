@@ -1,3 +1,5 @@
+version: 1
+
 on:
   pre-commit: [check]
   pre-push: [check]
@@ -6,7 +8,48 @@ on:
 pipelines:
   check:
     jobs:
+      just:
+        just: check-just
       whitespace:
         just: check-whitespace
       shell:
         just: check-shell
+
+  online-images:
+    needs: [check]
+    jobs:
+      build:
+        just: online::stable
+
+  online-media:
+    needs: [check]
+    jobs:
+      build:
+        just: online::media
+
+  online:
+    needs: [online-images, online-media]
+
+  next:
+    needs: [check]
+    jobs:
+      build:
+        just: online::next
+
+  offline:
+    needs: [check]
+    jobs:
+      build:
+        just: offline-build
+
+  offline-workstation:
+    needs: [check]
+    jobs:
+      build:
+        just: offline-workstation-build
+
+  release:
+    needs: [online]
+    jobs:
+      publish:
+        just: online::release
