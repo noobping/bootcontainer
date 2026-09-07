@@ -106,6 +106,15 @@ _images stream architecture="both" selection="all":
     fi
     run_id="$(printf '%s' "$run_id" | tr -c '[:alnum:]_.-' '-')"
     state_dir="$repo/dist/online/state/$stream/$run_id"
+    registry_auth_dir=
+
+    cleanup_registry_auth() {
+        if [[ -n "$registry_auth_dir" ]]; then
+            rm -f -- "$registry_auth_dir/config.json"
+            rmdir -- "$registry_auth_dir" 2>/dev/null || true
+        fi
+    }
+    trap cleanup_registry_auth EXIT
 
     case "$stream" in
         stable)
@@ -532,9 +541,16 @@ _images stream architecture="both" selection="all":
             echo "REGISTRY_USER or GITHUB_ACTOR is required with a registry token" >&2
             exit 1
         fi
+        registry_auth_dir="$(mktemp -d \
+            "$repo/dist/online/.registry-auth.XXXXXXXXXX")"
+        chmod 0700 "$registry_auth_dir"
+        export DOCKER_CONFIG="$registry_auth_dir"
+        export REGISTRY_AUTH_FILE="$registry_auth_dir/config.json"
         printf '%s' "$registry_token" \
-            | run_buildah login --tls-verify="$tls_verify" \
+            | run_buildah login --authfile "$REGISTRY_AUTH_FILE" \
+                --tls-verify="$tls_verify" \
                 --username "$registry_user" --password-stdin "$registry"
+        chmod 0600 "$REGISTRY_AUTH_FILE"
     fi
 
     if [[ "$architecture" == manifests ]]; then
