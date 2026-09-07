@@ -1,5 +1,3 @@
-version: 1
-
 on:
   pre-commit: [check]
   pre-push: [check]
