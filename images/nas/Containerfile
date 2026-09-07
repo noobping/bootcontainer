@@ -37,7 +37,7 @@ RUN set -euxo pipefail; \
   /var/lib/suricata \
   /var/log/suricata \
   /var/www; \
-  install -d -m 0755 -o 1007 -g 1007 /var/www/git; \
+  install -d -m 0755 /var/www/git; \
   ln -s /var/www/git /web; \
   if test -d /sysroot/ostree/repo; then ostree container commit; fi
 

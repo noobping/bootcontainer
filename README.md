@@ -19,24 +19,32 @@ Nodes automatically configure themselves at first boot and continuously maintain
 ## Commands
 
 ```sh
-pipeline check            # run whitespace and shell checks in parallel
-just offline-workstation  # build the x86_64 offline Workstation installer
+pipeline check  # run whitespace and shell checks in parallel
+just offline    # build every stable image and offline installer
 ```
 
 The Workstation, Sway, and NAS images expose `pipeline` as a Podman-backed shell
 alias. It pulls a newer `continuous` image when available, mounts the current
 directory, and never installs Pipeline on the host.
 
-`offline-workstation` starts or reuses a local registry, builds the IPS and
-Workstation images, customizes the Fedora CoreOS ISO, and writes:
+`just offline` starts or reuses a local registry and builds the native
+architecture of IPS, Workstation, Sway, NAS, the VM base, K3s, Minecraft, and
+Jellyfin. Independent image branches build in parallel. It then renders all
+Ignition configs and embeds each host image in its installer (`ARCH` is
+`x86_64` or `aarch64`):
 
 ```text
-dist/iso/workstation-offline-x86_64.iso
-dist/iso/workstation-offline-x86_64.iso.sha256
+dist/iso/nas-offline-ARCH.iso
+dist/iso/sway-offline-ARCH.iso
+dist/iso/workstation-offline-ARCH.iso
 ```
 
-It runs directly through Just because the build requires host Podman and
-Buildah. It defaults to `IMAGE_NAMESPACE=localhost:5000/noobping`.
+Each ISO has a matching `.sha256`; generated Ignition files are in `dist/ign`.
+Use `just offline-workstation` for only the IPS and Workstation path. These
+recipes require host Podman and Buildah and default to
+`IMAGE_NAMESPACE=localhost:5000/noobping`. Creating the media requires network
+access: image builds refresh their upstream bases, and the recipe downloads a
+Fedora CoreOS ISO when one is not already present.
 
 ## Container and GitHub
 

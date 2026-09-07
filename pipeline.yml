@@ -12,12 +12,3 @@ pipelines:
         just: check-whitespace
       shell:
         just: check-shell
-
-  offline:
-    needs: [check]
-    jobs:
-      workstation:
-        just: offline-workstation
-
-  build:
-    needs: [offline]

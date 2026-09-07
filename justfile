@@ -21,19 +21,47 @@ check-shell:
     done < <(git ls-files -z)
     exit "$failed"
 
-# Build an x86_64 Workstation installer with its bootc image embedded.
-offline-workstation:
+# Build every stable image and all offline installer artifacts for this host.
+offline: (_offline "all")
+
+# Build only the Workstation offline installer.
+offline-workstation: (_offline "workstation")
+
+[private]
+_offline target:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    repo='{{justfile_directory()}}'
+    repo='{{ justfile_directory() }}'
+    target='{{ target }}'
     namespace="${IMAGE_NAMESPACE:-localhost:5000/noobping}"
     tls_verify="${REGISTRY_TLS_VERIFY:-false}"
     isolation="${BUILDAH_ISOLATION:-chroot}"
     tmpdir="${TMPDIR:-/tmp}"
     source_url="$(git -C "$repo" config --get remote.origin.url || printf '%s' "$repo")"
-    image_arch=amd64
-    coreos_arch=x86_64
+
+    case "$target" in
+        all|workstation) ;;
+        *)
+            echo "unsupported offline target: $target" >&2
+            exit 2
+            ;;
+    esac
+
+    case "$(uname -m)" in
+        x86_64)
+            image_arch=amd64
+            coreos_arch=x86_64
+            ;;
+        aarch64|arm64)
+            image_arch=arm64
+            coreos_arch=aarch64
+            ;;
+        *)
+            echo "offline does not support $(uname -m)" >&2
+            exit 1
+            ;;
+    esac
 
     registry="${namespace%%/*}"
     case "$registry" in
@@ -55,7 +83,7 @@ offline-workstation:
         elif command -v flatpak-spawn >/dev/null 2>&1; then
             flatpak-spawn --host podman "$@"
         else
-            echo "podman is required to build the offline image" >&2
+            echo "podman is required to build offline artifacts" >&2
             exit 1
         fi
     }
@@ -66,7 +94,7 @@ offline-workstation:
         elif command -v flatpak-spawn >/dev/null 2>&1; then
             flatpak-spawn --host env TMPDIR="$tmpdir" buildah "$@"
         else
-            echo "buildah is required to build the offline image" >&2
+            echo "buildah is required to build offline artifacts" >&2
             exit 1
         fi
     }
@@ -165,32 +193,225 @@ offline-workstation:
     render_butane() {
         local input="$1"
         local output="$2"
-        local bootc_image="${3:-workstation}"
+        local bootc_image="$3"
 
         sed \
             -e "s#__IMAGE_NAMESPACE__#${namespace}#g" \
             -e "s#__BOOTC_IMAGE__#${bootc_image}#g" \
-            -e "s#ghcr.io/noobping#${namespace}#g" \
             "$input" > "$output"
     }
 
     build_image() {
         local context="$1"
-        local image="$2"
+        local name="$2"
+        local arch_image="${namespace}/${name}:${image_arch}"
+        local latest_image="${namespace}/${name}:latest"
         shift 2
 
+        printf '\n==> Building %s\n' "$arch_image"
         run_buildah bud \
+            --layers \
             --pull=always \
             --arch "$image_arch" \
             --isolation="$isolation" \
-            -t "$image" \
+            -t "$arch_image" \
             --label "org.opencontainers.image.source=${source_url}" \
             "$@" \
             "$context"
 
-        run_buildah push --tls-verify="$tls_verify" "$image" "docker://$image"
-        run_buildah rmi "$image" >/dev/null 2>&1 || true
-        run_buildah prune -f >/dev/null 2>&1 || true
+        run_buildah push --tls-verify="$tls_verify" \
+            "$arch_image" "docker://$arch_image"
+        run_buildah rmi "$latest_image" >/dev/null 2>&1 || true
+        run_buildah tag "$arch_image" "$latest_image"
+        run_buildah push --tls-verify="$tls_verify" \
+            "$latest_image" "docker://$latest_image"
+    }
+
+    build_ips() {
+        build_image images/ips ips --build-arg FCOS_STREAM=stable
+    }
+
+    build_workstation() {
+        build_image images/workstation workstation \
+            --tls-verify="$tls_verify" \
+            --build-arg "IMAGE_NAMESPACE=${namespace}" \
+            --build-arg "TAG=${image_arch}"
+    }
+
+    build_nas() {
+        build_image images/nas nas \
+            --tls-verify="$tls_verify" \
+            --build-arg "IMAGE_NAMESPACE=${namespace}"
+    }
+
+    build_vm() {
+        build_image vms/vm vm \
+            --tls-verify="$tls_verify" \
+            --build-arg "IMAGE_NAMESPACE=${namespace}" \
+            --build-arg "TAG=${image_arch}"
+    }
+
+    build_sway() {
+        build_image images/sway sway \
+            --tls-verify="$tls_verify" \
+            --build-arg "IMAGE_NAMESPACE=${namespace}" \
+            --build-arg "TAG=${image_arch}"
+    }
+
+    build_k3s() {
+        build_image vms/k3s k3s \
+            --tls-verify="$tls_verify" \
+            --build-arg "IMAGE_NAMESPACE=${namespace}" \
+            --build-arg "TAG=${image_arch}"
+    }
+
+    build_minecraft() {
+        build_image vms/minecraft minecraft \
+            --tls-verify="$tls_verify" \
+            --build-arg "IMAGE_NAMESPACE=${namespace}" \
+            --build-arg "TAG=${image_arch}"
+    }
+
+    build_jellyfin() {
+        build_image vms/jellyfin jellyfin \
+            --tls-verify="$tls_verify" \
+            --build-arg "IMAGE_NAMESPACE=${namespace}" \
+            --build-arg "TAG=${image_arch}"
+    }
+
+    build_workstation_branch() {
+        build_workstation
+        build_sway
+    }
+
+    build_vm_branch() {
+        build_vm
+        run_parallel build_k3s build_minecraft build_jellyfin
+    }
+
+    run_parallel() {
+        local task index failed=0
+        local -a tasks=("$@")
+        local -a pids=()
+
+        for task in "${tasks[@]}"; do
+            "$task" &
+            pids+=("$!")
+        done
+
+        for index in "${!pids[@]}"; do
+            if ! wait "${pids[$index]}"; then
+                printf 'offline task failed: %s\n' "${tasks[$index]}" >&2
+                failed=1
+            fi
+        done
+
+        (( failed == 0 ))
+    }
+
+    build_ignition() {
+        local input="$1"
+        local output="$2"
+
+        run_podman run --rm \
+            -v "$repo:/work:Z" -w /work \
+            quay.io/coreos/butane:release \
+            --pretty --strict --files-dir . "$input" \
+            > "$output"
+
+        run_podman run --rm -i \
+            quay.io/coreos/ignition-validate:release \
+            - < "$output"
+    }
+
+    render_profile() {
+        local profile="$1"
+        local source_profile="$2"
+
+        run_yq ea '. as $item ireduce ({}; . *+ $item)' \
+            butane/base.yml \
+            butane/updates.yml \
+            "butane/${source_profile}.yml" \
+            > "dist/butane/${profile}.bu"
+        render_butane \
+            "dist/butane/${profile}.bu" \
+            "dist/butane/${profile}.rendered.bu" \
+            "$profile"
+        build_ignition \
+            "dist/butane/${profile}.rendered.bu" \
+            "dist/ign/${profile}.ign"
+    }
+
+    render_guest() {
+        local guest="$1"
+
+        run_yq ea '. as $item ireduce ({}; . *+ $item)' \
+            butane/base.yml \
+            butane/updates.yml \
+            butane/vm.yml \
+            "butane/${guest}.yml" \
+            > "dist/butane/${guest}.bu"
+        render_butane \
+            "dist/butane/${guest}.bu" \
+            "dist/butane/${guest}.rendered.bu" \
+            "$guest"
+        build_ignition \
+            "dist/butane/${guest}.rendered.bu" \
+            "dist/ign/${guest}.ign"
+    }
+
+    build_installer() {
+        local profile="$1"
+        local profile_dir="$work_dir/$profile"
+        local archive_dir="$profile_dir/bootc"
+        local archive_dir_container="/work-tmp/${profile}/bootc"
+        local archive="$archive_dir/${profile}.ociarchive"
+        local custom_iso="$profile_dir/custom.iso"
+        local custom_iso_container="/work-tmp/${profile}/custom.iso"
+        local out_iso="dist/iso/${profile}-offline-${coreos_arch}.iso"
+        local out_iso_container="/work/${out_iso}"
+
+        printf '\n==> Building %s\n' "$out_iso"
+        mkdir -p "$archive_dir"
+        rm -f "$out_iso" "${out_iso}.sha256"
+
+        run_podman pull --tls-verify="$tls_verify" \
+            "${namespace}/${profile}:latest"
+        run_podman save --format oci-archive -o "$archive" \
+            "${namespace}/${profile}:latest"
+        (
+            cd "$archive_dir"
+            sha256sum "${profile}.ociarchive" \
+                > "${profile}.ociarchive.sha256"
+        )
+
+        run_podman run --rm \
+            --userns=keep-id \
+            --user "$(id -u):$(id -g)" \
+            -v "$repo:/work:Z" -w /work \
+            -v "$work_dir:/work-tmp:Z" \
+            quay.io/coreos/coreos-installer:release \
+            iso customize \
+                --live-ignition dist/ign/setup.ign \
+                --dest-ignition "dist/ign/${profile}.ign" \
+                --pre-install butane/bin/detect-device \
+                -o "$custom_iso_container" \
+                "$base_iso"
+
+        write_iso_with_archive \
+            "$custom_iso" \
+            "$out_iso" \
+            "$archive_dir" \
+            "$custom_iso_container" \
+            "$out_iso_container" \
+            "$archive_dir_container"
+
+        (
+            cd dist/iso
+            sha256sum "${profile}-offline-${coreos_arch}.iso" \
+                > "${profile}-offline-${coreos_arch}.iso.sha256"
+        )
+        rm -rf -- "$profile_dir"
     }
 
     ensure_registry
@@ -198,58 +419,44 @@ offline-workstation:
     cd "$repo"
     mkdir -p dist/butane dist/ign dist/iso
 
-    build_image images/ips "${namespace}/ips:${image_arch}"
-    build_image images/workstation "${namespace}/workstation:${image_arch}" \
-        --tls-verify="$tls_verify" \
-        --build-arg "IMAGE_NAMESPACE=${namespace}" \
-        --build-arg "TAG=${image_arch}"
+    build_ips
 
-    run_podman pull --tls-verify="$tls_verify" "${namespace}/workstation:${image_arch}"
-    run_podman tag "${namespace}/workstation:${image_arch}" "${namespace}/workstation:latest"
-    run_podman push --tls-verify="$tls_verify" \
-        "${namespace}/workstation:latest" \
-        "docker://${namespace}/workstation:latest"
+    if [[ "$target" == all ]]; then
+        run_parallel build_workstation_branch build_nas build_vm_branch
+        profiles=(nas workstation sway)
+    else
+        build_workstation
+        profiles=(workstation)
+    fi
 
     # Keep the staging directory under the checkout so host-side Podman can see
     # it even when Just is running inside a Flatpak sandbox with a private /tmp.
     work_dir="$(mktemp -d "$repo/dist/.pipeline-offline.XXXXXX")"
     trap 'rm -rf -- "$work_dir"' EXIT
 
-    archive_dir="$work_dir/bootc"
-    archive_dir_container=/work-tmp/bootc
-    mkdir -p "$archive_dir"
-    archive="$archive_dir/workstation.ociarchive"
-
-    run_podman save --format oci-archive -o "$archive" \
-        "${namespace}/workstation:latest"
-    sha256sum "$archive" | tee "${archive}.sha256"
-
     run_yq ea '. as $item ireduce ({}; . *+ $item)' \
         butane/base.yml \
         butane/setup.yml \
         > dist/butane/setup.bu
-    render_butane dist/butane/setup.bu dist/butane/setup.rendered.bu
-
-    run_podman run --rm \
-        -v "$repo:/work:Z" -w /work \
-        quay.io/coreos/butane:release \
-        --pretty --strict --files-dir . dist/butane/setup.rendered.bu \
-        > dist/ign/setup.ign
-
-    run_yq ea '. as $item ireduce ({}; . *+ $item)' \
-        butane/base.yml \
-        butane/updates.yml \
-        butane/workstation.yml \
-        > dist/butane/workstation.bu
     render_butane \
-        dist/butane/workstation.bu \
-        dist/butane/workstation.rendered.bu
+        dist/butane/setup.bu \
+        dist/butane/setup.rendered.bu \
+        workstation
+    build_ignition dist/butane/setup.rendered.bu dist/ign/setup.ign
 
-    run_podman run --rm \
-        -v "$repo:/work:Z" -w /work \
-        quay.io/coreos/butane:release \
-        --pretty --strict --files-dir . dist/butane/workstation.rendered.bu \
-        > dist/ign/workstation.ign
+    for profile in "${profiles[@]}"; do
+        if [[ "$profile" == sway ]]; then
+            render_profile sway workstation
+        else
+            render_profile "$profile" "$profile"
+        fi
+    done
+
+    if [[ "$target" == all ]]; then
+        for guest in k3s minecraft jellyfin; do
+            render_guest "$guest"
+        done
+    fi
 
     if ! ls -1 fedora-coreos-*-live-iso."${coreos_arch}".iso >/dev/null 2>&1; then
         run_podman run --rm \
@@ -260,32 +467,10 @@ offline-workstation:
             download -s stable -a "$coreos_arch" -p metal -f iso -C /work --decompress
     fi
 
-    base_iso="$(ls -1 fedora-coreos-*-live-iso."${coreos_arch}".iso | tail -n1)"
-    out_iso="dist/iso/workstation-offline-${coreos_arch}.iso"
-    out_iso_container="/work/${out_iso}"
-    custom_iso="${work_dir}/workstation-custom.iso"
-    custom_iso_container=/work-tmp/workstation-custom.iso
-    rm -f "$out_iso" "${out_iso}.sha256"
+    base_iso="$(ls -1t fedora-coreos-*-live-iso."${coreos_arch}".iso | sed -n '1p')"
+    for profile in "${profiles[@]}"; do
+        build_installer "$profile"
+    done
 
-    run_podman run --rm \
-        --userns=keep-id \
-        --user "$(id -u):$(id -g)" \
-        -v "$repo:/work:Z" -w /work \
-        -v "$work_dir:/work-tmp:Z" \
-        quay.io/coreos/coreos-installer:release \
-        iso customize \
-            --live-ignition dist/ign/setup.ign \
-            --dest-ignition dist/ign/workstation.ign \
-            --pre-install butane/bin/detect-device \
-            -o "$custom_iso_container" \
-            "$base_iso"
-
-    write_iso_with_archive \
-        "$custom_iso" \
-        "$out_iso" \
-        "$archive_dir" \
-        "$custom_iso_container" \
-        "$out_iso_container" \
-        "$archive_dir_container"
-
-    sha256sum "$out_iso" | tee "${out_iso}.sha256"
+    printf '\nBuilt %s images in %s and installer artifacts in %s/dist.\n' \
+        "$target" "$namespace" "$repo"
