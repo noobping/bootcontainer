@@ -25,6 +25,7 @@ concurrency:
 jobs:
   build:
     name: Build ${{ matrix.stream.name }} ${{ matrix.arch.name }}
+    continue-on-error: ${{ matrix.stream.name == 'next' }}
     strategy:
       fail-fast: false
       matrix:
@@ -99,6 +100,7 @@ jobs:
           TMPDIR: /mnt/tmp
         run: |
           IMAGE="${IMAGE_NAME}:${{ matrix.arch.name }}${{ matrix.stream.suffix }}"
+          DIGEST_FILE="${RUNNER_TEMP}/ips-${{ matrix.stream.name }}-${{ matrix.arch.name }}.digest"
 
           buildah bud \
             --pull-always \
@@ -108,13 +110,23 @@ jobs:
             --build-arg FCOS_STREAM="${{ matrix.stream.fcos_stream }}" \
             .
 
-          buildah push "$IMAGE" "docker://$IMAGE"
+          buildah push --digestfile "$DIGEST_FILE" "$IMAGE" "docker://$IMAGE"
 
           buildah rmi "$IMAGE" || true
           buildah prune -f || true
 
+      - name: Record image digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: ips-digest-${{ matrix.stream.name }}-${{ matrix.arch.name }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ips-${{ matrix.stream.name }}-${{ matrix.arch.name }}.digest
+          if-no-files-found: error
+          retention-days: 1
+
   manifest:
     name: Manifest ${{ matrix.stream.name }}
+    if: ${{ always() && !cancelled() }}
+    continue-on-error: ${{ matrix.stream.name == 'next' }}
     needs: build
     runs-on: ubuntu-latest
     strategy:
@@ -134,6 +146,13 @@ jobs:
       id-token: write
 
     steps:
+      - name: Current image digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ips-digest-${{ matrix.stream.name }}-*-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ips-digests
+          merge-multiple: true
+
       - uses: sigstore/cosign-installer@v3
 
       - name: Repository
@@ -147,10 +166,14 @@ jobs:
         run: |
           set -euxo pipefail
           metadata="${RUNNER_TEMP}/manifest.json"
+          amd64_digest="$(tr -d '\r\n' < "${RUNNER_TEMP}/ips-digests/ips-${{ matrix.stream.name }}-amd64.digest")"
+          arm64_digest="$(tr -d '\r\n' < "${RUNNER_TEMP}/ips-digests/ips-${{ matrix.stream.name }}-arm64.digest")"
+          [[ "$amd64_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$arm64_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           docker buildx imagetools create \
             --metadata-file "$metadata" \
             -t "${IMAGE_NAME}:${{ matrix.stream.tag }}" \
-            "${IMAGE_NAME}:amd64${{ matrix.stream.suffix }}" \
-            "${IMAGE_NAME}:arm64${{ matrix.stream.suffix }}"
+            "${IMAGE_NAME}@${amd64_digest}" \
+            "${IMAGE_NAME}@${arm64_digest}"
           digest="$(jq -r '."containerimage.descriptor".digest' "$metadata")"
           cosign sign --yes --recursive "${IMAGE_NAME}@${digest}"
