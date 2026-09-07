@@ -21,11 +21,7 @@ check-shell:
     done < <(git ls-files -z)
     exit "$failed"
 
-# Build every stable image and all offline installers for an architecture.
-offline architecture="native": (_offline "all" architecture)
-
-# Build only the Workstation offline installer.
-offline-workstation architecture="native": (_offline "workstation" architecture)
+offline target="all" architecture="native": (_offline target architecture)
 
 [private]
 _offline target architecture:

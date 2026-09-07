@@ -51,7 +51,7 @@ dist/iso/workstation-offline-{x86_64,aarch64}.iso
 ```
 
 Each ISO has a matching `.sha256`; generated Ignition files are in `dist/ign`.
-Use `just offline-workstation [architecture]` for only the IPS and Workstation
+Use `just offline workstation [architecture]` for only the IPS and Workstation
 path. These recipes require host Podman and Buildah and default to
 `IMAGE_NAMESPACE=localhost:5000/noobping`. Building a non-native architecture
 also requires working QEMU/binfmt container emulation on the host; the recipe
