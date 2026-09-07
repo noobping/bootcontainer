@@ -12,43 +12,6 @@ dependency graphs.
 ## Commands
 
 ```sh
-pipeline check                 # whitespace and shell validation
-PUBLISH=true pipeline online   # stable images and online media
-PUBLISH=true pipeline next     # Fedora CoreOS next-stream images
-pipeline offline               # all offline media, AMD64 and ARM64
-pipeline offline-workstation   # Workstation offline media, both architectures
-pipeline offline-nas           # NAS offline media, both architectures
-pipeline offline-sway          # Sway offline media, both architectures
-PUBLISH=true pipeline release  # stable build followed by GitHub publication
-```
-
-`pipeline online` builds the stable IPS base first, then builds Workstation,
-Sway, NAS, the VM base, K3s, Minecraft, and Jellyfin in dependency order. It
-builds AMD64 and ARM64 images, publishes their architecture tags and
-multi-architecture `:latest` manifests, and creates the online NAS,
-Workstation, and Sway media plus all Ignition configurations. The image and
-media jobs run concurrently; the two architecture graphs and independent image
-branches also run in parallel.
-
-The Fedora CoreOS `next` stream is deliberately a separate pipeline, so CI can
-allow it to fail without hiding failures in the stable graph. It builds and
-publishes the next IPS, Workstation, and Sway images for both architectures
-with `:next` manifests.
-
-GitHub Actions and GitLab CI both call these same Pipeline targets. Every image
-architecture and every ISO has its own CI job and therefore its own hosted
-runner; dependency edges only wait for the matching parent architecture.
-GitLab requires 18.6 or newer for these one-to-one matrix dependencies. Its
-default `saas-linux-small-amd64` and `saas-linux-small-arm64` tags can be
-replaced with larger or self-managed native runner tags when a build needs more
-disk. Self-managed runners must support privileged container builds. Offline
-builds are intentionally local-only on both CI platforms. Add a GitLab
-pipeline schedule when the GitHub workflow's daily build cadence is wanted.
-
-Pipeline's offline commands always build both architectures. For a smaller or
-native-only offline build, call Just directly:
-
-```sh
 just offline [selection] [architecture]
 
 # selection:    all (default), workstation, sway, nas
@@ -72,16 +35,6 @@ development build. Manifest signing uses Cosign's ambient keyless credentials
 from GitHub or GitLab.com OIDC. Set `SIGN_IMAGES=false` for an unsigned or
 self-managed test registry and `REGISTRY_TLS_VERIFY=false` for an insecure
 local registry.
-
-`pipeline release` publishes `dist/online/iso` to the continuous GitHub
-release with `GH_TOKEN` or `GITHUB_TOKEN`. GitLab's six media jobs each upload
-their verified ISO and checksum directly through the
-`gitlab-media-publish` leaf, avoiding GitLab.com's 1 GB artifact limit. The
-final `gitlab-release-assets` leaf creates an immutable release containing
-links to that pipeline's Generic Package Registry assets. Each successful
-pipeline keeps versioned packages; remove old versions according to your
-retention needs. Both paths run through Pipeline; their CLI tools can be
-installed on the host or run through Podman.
 
 Image builds need host Podman and Buildah, plus Skopeo for split-runner manifest
 publication, Cosign when signing is enabled, sufficient disk space, and
