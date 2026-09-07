@@ -1,7 +1,6 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 [![Check](https://github.com/noobping/infrastructure/actions/workflows/check.yml/badge.svg)](https://github.com/noobping/infrastructure/actions/workflows/check.yml)
 [![Build](https://github.com/noobping/infrastructure/actions/workflows/build.yml/badge.svg)](https://github.com/noobping/infrastructure/actions/workflows/build.yml)
-[![GitLab CI](https://gitlab.com/noobping/infrastructure/badges/main/pipeline.svg)](https://gitlab.com/noobping/infrastructure/-/pipelines)
 
 # Infrastructure
 
