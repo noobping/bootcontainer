@@ -15,6 +15,7 @@ PUBLISH=true pipeline online   # stable images and online media
 PUBLISH=true pipeline next     # Fedora CoreOS next-stream images
 pipeline offline               # all offline media, AMD64 and ARM64
 pipeline offline-workstation   # Workstation offline media, both architectures
+pipeline offline-nas           # NAS offline media, both architectures
 PUBLISH=true pipeline release  # stable build followed by GitHub publication
 ```
 
@@ -37,7 +38,7 @@ native-only offline build, call Just directly:
 ```sh
 just offline [selection] [architecture]
 
-# selection:    all (default), workstation
+# selection:    all (default), workstation, nas
 # architecture: native (default), both, amd64, arm64
 just offline workstation amd64
 just offline amd64
@@ -63,6 +64,19 @@ dist/iso/workstation-offline-{x86_64,aarch64}.iso
 Every ISO has a matching `.sha256` file. Offline ISO names include `-offline`
 and contain the image archive; online ISO names do not.
 
+## GitHub Actions
+
+GitHub uses the same Pipeline targets as local builds. The online workflow fans
+the image and media graphs out to native AMD64 and ARM64 runners, transfers
+only digests and finished media between jobs, then runs the manifest and
+release Pipeline targets. Stable failures stop publication; the separate
+next-stream jobs remain allowed to fail. The manual offline workflow builds
+both architectures on native runners and uploads each installer separately.
+
+Workflow YAML is limited to runner preparation, permissions, and artifact
+transport. Image ordering, parallel branches, validation, publication, and
+release checks remain in Just and `pipeline.yml`.
+
 ## Publishing and build environment
 
 Online builds default to `IMAGE_NAMESPACE=ghcr.io/noobping`. Authenticate the
@@ -84,10 +98,11 @@ while still giving recipes access to host tools. Cached images are used by
 default; set `PIPELINE_PULL=newer` to update or `PIPELINE_PULL=never` for a
 strictly disconnected launch.
 
-Image builds need host Podman and Buildah, plus Cosign when signing is enabled,
-sufficient disk space, and QEMU/binfmt when building a non-native architecture.
-Release uses an installed GitHub CLI or Podman. Build execution refreshes
-upstream images, packages, and Fedora CoreOS media, so it requires network
-access. “Offline” means the resulting installer can install without a network
-connection. The ARM64 NAS image and installer are supported; its bundled
-libvirt VM deployment remains x86_64-only.
+Image builds need host Podman and Buildah, plus Skopeo for split-runner manifest
+publication, Cosign when signing is enabled, sufficient disk space, and
+QEMU/binfmt when building a non-native architecture. Release uses an installed
+GitHub CLI or Podman. Build execution refreshes upstream images, packages, and
+Fedora CoreOS media, so it requires network access. “Offline” means the
+resulting installer can install without a network connection. The ARM64 NAS
+image and installer are supported; its bundled libvirt VM deployment remains
+x86_64-only.

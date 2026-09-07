@@ -15,12 +15,18 @@ check-just:
     script="$(mktemp)"
     trap 'rm -f -- "$script"' EXIT
     commands=(
-        "online::_images stable"
-        "online::_images next"
-        "online::_media"
+        "online::_images stable both"
+        "online::_images stable amd64"
+        "online::_images stable manifests"
+        "online::_images next both"
+        "online::_images next arm64"
+        "online::_images next manifests"
+        "online::_media both"
+        "online::_media amd64"
         "online::_release"
         "_offline all both"
         "_offline workstation both"
+        "_offline nas both"
     )
     for command in "${commands[@]}"; do
         read -r -a arguments <<< "$command"
@@ -54,6 +60,18 @@ offline-build:
 offline-workstation-build:
     @{{ quote(just_executable()) }} _offline workstation both
 
+# Build the offline NAS image and installers for both architectures.
+offline-nas-build:
+    @{{ quote(just_executable()) }} _offline nas both
+
+# Build every offline image and AMD64 installer on a native AMD64 runner.
+offline-amd64-build:
+    @{{ quote(just_executable()) }} _offline all amd64
+
+# Build every offline image and ARM64 installer on a native ARM64 runner.
+offline-arm64-build:
+    @{{ quote(just_executable()) }} _offline all arm64
+
 [private]
 _offline target architecture:
     #!/usr/bin/env bash
@@ -69,7 +87,7 @@ _offline target architecture:
     source_url="$(git -C "$repo" config --get remote.origin.url || printf '%s' "$repo")"
 
     case "$target" in
-        all|workstation) ;;
+        all|workstation|nas) ;;
         native|both|amd64|x86_64|arm64|aarch64)
             if [[ "$architecture" != native ]]; then
                 echo "architecture specified twice: $target $architecture" >&2
@@ -552,13 +570,20 @@ _offline target architecture:
     cd "$repo"
     mkdir -p dist/butane dist/ign dist/iso
 
-    if [[ "$target" == all ]]; then
-        profiles=(nas workstation sway)
-        image_names=(ips workstation sway nas vm k3s minecraft jellyfin)
-    else
-        profiles=(workstation)
-        image_names=(ips workstation)
-    fi
+    case "$target" in
+        all)
+            profiles=(nas workstation sway)
+            image_names=(ips workstation sway nas vm k3s minecraft jellyfin)
+            ;;
+        workstation)
+            profiles=(workstation)
+            image_names=(ips workstation)
+            ;;
+        nas)
+            profiles=(nas)
+            image_names=(ips nas)
+            ;;
+    esac
 
     if ! command -v flock >/dev/null 2>&1; then
         echo "flock is required to coordinate offline builds" >&2
@@ -612,11 +637,11 @@ _offline target architecture:
 
         build_ips
 
-        if [[ "$target" == all ]]; then
-            run_parallel build_workstation_branch build_nas build_vm_branch
-        else
-            build_workstation
-        fi
+        case "$target" in
+            all) run_parallel build_workstation_branch build_nas build_vm_branch ;;
+            workstation) build_workstation ;;
+            nas) build_nas ;;
+        esac
 
         if ! ls -1 fedora-coreos-*-live-iso."${coreos_arch}".iso >/dev/null 2>&1; then
             run_podman run --rm \

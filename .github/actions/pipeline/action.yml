@@ -1,0 +1,58 @@
+name: Run Pipeline on the host
+description: Prepare a GitHub runner and execute a named infrastructure pipeline
+
+inputs:
+  arguments:
+    description: Pipeline arguments, one argument per line
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install host build tools
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          buildah ca-certificates curl fuse-overlayfs git jq podman \
+          skopeo slirp4netns uidmap xorriso
+        sudo update-ca-certificates
+
+    - name: Configure container storage
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo mkdir -p /mnt/containers /mnt/runcontainers /mnt/tmp
+        sudo chown -R "$USER:$USER" \
+          /mnt/containers /mnt/runcontainers /mnt/tmp
+        mkdir -p "$HOME/.config/containers"
+        tee "$HOME/.config/containers/storage.conf" >/dev/null <<'EOF'
+        [storage]
+        driver = "overlay"
+        runroot = "/mnt/runcontainers/storage"
+        graphroot = "/mnt/containers/storage"
+
+        [storage.options]
+        mount_program = "/usr/bin/fuse-overlayfs"
+        EOF
+        buildah info
+        podman --version
+
+    - name: Run Pipeline
+      shell: bash
+      env:
+        PIPELINE_ARGUMENTS: ${{ inputs.arguments }}
+        PIPELINE_PULL: newer
+        TMPDIR: /mnt/tmp
+      run: |
+        set -euo pipefail
+        arguments=()
+        while IFS= read -r argument || [[ -n "$argument" ]]; do
+          argument=${argument%$'\r'}
+          [[ -z "$argument" ]] && continue
+          arguments+=("$argument")
+        done < <(printf '%s' "$PIPELINE_ARGUMENTS")
+
+        source "$GITHUB_WORKSPACE/images/nas/pipeline.sh"
+        pipeline "${arguments[@]}"

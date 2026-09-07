@@ -48,8 +48,69 @@ pipelines:
       build:
         just: offline-workstation-build
 
+  offline-nas:
+    needs: [check]
+    jobs:
+      build:
+        just: offline-nas-build
+
   release:
     needs: [online]
     jobs:
       publish:
         just: online::release
+
+  stable-amd64:
+    jobs:
+      build:
+        just: online::stable-amd64
+
+  stable-arm64:
+    jobs:
+      build:
+        just: online::stable-arm64
+
+  stable-manifests:
+    jobs:
+      publish:
+        just: online::stable-manifests
+
+  media-amd64:
+    jobs:
+      build:
+        just: online::media-amd64
+
+  media-arm64:
+    jobs:
+      build:
+        just: online::media-arm64
+
+  release-assets:
+    jobs:
+      publish:
+        just: online::release-assets
+
+  next-amd64:
+    jobs:
+      build:
+        just: online::next-amd64
+
+  next-arm64:
+    jobs:
+      build:
+        just: online::next-arm64
+
+  next-manifests:
+    jobs:
+      publish:
+        just: online::next-manifests
+
+  offline-amd64:
+    jobs:
+      build:
+        just: offline-amd64-build
+
+  offline-arm64:
+    jobs:
+      build:
+        just: offline-arm64-build

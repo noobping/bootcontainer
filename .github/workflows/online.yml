@@ -1,0 +1,269 @@
+name: Online
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "butane/**"
+      - "images/**"
+      - "vms/**"
+      - "justfile"
+      - "online.just"
+      - "pipeline.yml"
+      - ".github/actions/pipeline/**"
+      - ".github/workflows/online.yml"
+      - "!**/*.md"
+  schedule:
+    - cron: "59 00 * * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Build stream
+        type: choice
+        options: [all, stable, next]
+        default: all
+
+concurrency:
+  group: >-
+    pipeline-online-${{
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') &&
+      'publish' || github.run_id
+    }}
+  cancel-in-progress: true
+
+env:
+  BUILDAH_ISOLATION: chroot
+  IMAGE_NAMESPACE: ghcr.io/noobping
+  PIPELINE_RUN_ID: ${{ github.run_id }}
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Require a publishing branch
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          github.ref != 'refs/heads/main' &&
+          github.ref != 'refs/heads/master'
+        shell: bash
+        run: |
+          echo "Online publication is restricted to main or master." >&2
+          exit 1
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: noobping/pipeline@continuous
+        with:
+          arguments: |
+            --cap-jobs
+            3
+            check
+
+  stable-images:
+    name: Stable images (${{ matrix.arch }})
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      inputs.target == 'all' ||
+      inputs.target == 'stable'
+    needs: check
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PUBLISH: "true"
+      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REGISTRY_USER: ${{ github.actor }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+      - uses: ./.github/actions/pipeline
+        with:
+          arguments: stable-${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stable-digests-${{ github.run_id }}-${{ matrix.arch }}
+          path: dist/online/state/stable/${{ github.run_id }}/*-${{ matrix.arch }}.digest
+          compression-level: 0
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+
+  stable-manifests:
+    name: Stable manifests
+    needs: stable-images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    env:
+      PUBLISH: "true"
+      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REGISTRY_USER: ${{ github.actor }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: stable-digests-${{ github.run_id }}-*
+          path: dist/online/state/stable/${{ github.run_id }}
+          merge-multiple: true
+      - uses: sigstore/cosign-installer@v3
+      - uses: ./.github/actions/pipeline
+        with:
+          arguments: stable-manifests
+
+  media:
+    name: Online media (${{ matrix.arch }})
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      inputs.target == 'all' ||
+      inputs.target == 'stable'
+    needs: check
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            coreos_arch: x86_64
+            runner: ubuntu-latest
+          - arch: arm64
+            coreos_arch: aarch64
+            runner: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+      - uses: ./.github/actions/pipeline
+        with:
+          arguments: media-${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: online-media-${{ github.run_id }}-${{ matrix.arch }}
+          compression-level: 0
+          path: |
+            dist/online/iso/*-${{ matrix.coreos_arch }}.iso
+            dist/online/iso/*-${{ matrix.coreos_arch }}.iso.sha256
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: matrix.arch == 'amd64'
+        with:
+          name: online-ignition-${{ github.run_id }}
+          path: dist/online/ign/*.ign
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+
+  release:
+    name: Continuous release
+    needs: [stable-manifests, media]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PUBLISH: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: online-media-${{ github.run_id }}-*
+          path: dist/online/iso
+          merge-multiple: true
+      - uses: ./.github/actions/pipeline
+        with:
+          arguments: release-assets
+
+  next-images:
+    name: Next images (${{ matrix.arch }})
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      inputs.target == 'all' ||
+      inputs.target == 'next'
+    needs: check
+    continue-on-error: true
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PUBLISH: "true"
+      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REGISTRY_USER: ${{ github.actor }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+      - uses: ./.github/actions/pipeline
+        with:
+          arguments: next-${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: next-digests-${{ github.run_id }}-${{ matrix.arch }}
+          path: dist/online/state/next/${{ github.run_id }}/*-${{ matrix.arch }}.digest
+          compression-level: 0
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+
+  next-manifests:
+    name: Next manifests
+    if: >-
+      always() && !cancelled() &&
+      needs.next-images.result != 'skipped' &&
+      (github.event_name != 'workflow_dispatch' ||
+      inputs.target == 'all' ||
+      inputs.target == 'next')
+    needs: next-images
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    env:
+      PUBLISH: "true"
+      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REGISTRY_USER: ${{ github.actor }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: next-digests-${{ github.run_id }}-*
+          path: dist/online/state/next/${{ github.run_id }}
+          merge-multiple: true
+      - uses: sigstore/cosign-installer@v3
+      - uses: ./.github/actions/pipeline
+        with:
+          arguments: next-manifests

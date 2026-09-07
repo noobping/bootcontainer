@@ -1,0 +1,85 @@
+name: Offline
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pipeline-offline
+  cancel-in-progress: false
+
+env:
+  BUILDAH_ISOLATION: chroot
+  IMAGE_NAMESPACE: localhost:5000/noobping
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: noobping/pipeline@continuous
+        with:
+          arguments: |
+            --cap-jobs
+            3
+            check
+
+  build:
+    name: Offline media (${{ matrix.arch }})
+    needs: check
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            coreos_arch: x86_64
+            runner: ubuntu-latest
+          - arch: arm64
+            coreos_arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+      - uses: ./.github/actions/pipeline
+        with:
+          arguments: offline-${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nas-offline-${{ github.run_id }}-${{ matrix.arch }}
+          compression-level: 0
+          overwrite: true
+          retention-days: 1
+          path: dist/iso/nas-offline-${{ matrix.coreos_arch }}.iso*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workstation-offline-${{ github.run_id }}-${{ matrix.arch }}
+          compression-level: 0
+          overwrite: true
+          retention-days: 1
+          path: dist/iso/workstation-offline-${{ matrix.coreos_arch }}.iso*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sway-offline-${{ github.run_id }}-${{ matrix.arch }}
+          compression-level: 0
+          overwrite: true
+          retention-days: 1
+          path: dist/iso/sway-offline-${{ matrix.coreos_arch }}.iso*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: matrix.arch == 'amd64'
+        with:
+          name: offline-ignition-${{ github.run_id }}
+          path: dist/ign/*.ign
+          if-no-files-found: error
+          overwrite: true

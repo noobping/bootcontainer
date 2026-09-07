@@ -18,5 +18,6 @@ Generated Butane files are written to `dist/butane`, Ignition files to
 its matching OCI image and checksum so installation can fall back when the
 configured registry is unavailable.
 
-The GitHub Butane workflow renders the same profiles for both supported
-architectures without embedding images.
+The online media Pipeline renders the same profiles for both supported
+architectures without embedding images. GitHub invokes those same
+architecture-specific Pipeline targets on native runners.

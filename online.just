@@ -1,26 +1,63 @@
 # Build and publish the stable image graph for AMD64 and ARM64.
 stable:
-    @{{ quote(just_executable()) }} online::_images stable
+    @{{ quote(just_executable()) }} online::_images stable both
+
+# Build and stage the stable AMD64 architecture images.
+stable-amd64:
+    @{{ quote(just_executable()) }} online::_images stable amd64
+
+# Build and stage the stable ARM64 architecture images.
+stable-arm64:
+    @{{ quote(just_executable()) }} online::_images stable arm64
+
+# Publish stable multi-architecture manifests from this run's digests.
+stable-manifests:
+    @{{ quote(just_executable()) }} online::_images stable manifests
 
 # Build and publish the experimental FCOS next image graph.
 next:
-    @{{ quote(just_executable()) }} online::_images next
+    @{{ quote(just_executable()) }} online::_images next both
+
+# Build and stage the next-stream AMD64 architecture images.
+next-amd64:
+    @{{ quote(just_executable()) }} online::_images next amd64
+
+# Build and stage the next-stream ARM64 architecture images.
+next-arm64:
+    @{{ quote(just_executable()) }} online::_images next arm64
+
+# Publish next-stream multi-architecture manifests from this run's digests.
+next-manifests:
+    @{{ quote(just_executable()) }} online::_images next manifests
 
 # Build online installers and every Ignition configuration.
 media:
-    @{{ quote(just_executable()) }} online::_media
+    @{{ quote(just_executable()) }} online::_media both
+
+# Build AMD64 online installers and Ignition configurations.
+media-amd64:
+    @{{ quote(just_executable()) }} online::_media amd64
+
+# Build ARM64 online installers and Ignition configurations.
+media-arm64:
+    @{{ quote(just_executable()) }} online::_media arm64
 
 # Publish the online installers to the continuous GitHub release.
 release:
     @{{ quote(just_executable()) }} online::_release
 
+# Publish already-built online installers without rebuilding them.
+release-assets:
+    @{{ quote(just_executable()) }} online::_release
+
 [private]
-_images stream:
+_images stream architecture="both":
     #!/usr/bin/env bash
     set -euo pipefail
 
     repo={{ quote(justfile_directory()) }}
     stream={{ quote(stream) }}
+    architecture={{ quote(architecture) }}
     namespace="${IMAGE_NAMESPACE:-ghcr.io/noobping}"
     isolation="${BUILDAH_ISOLATION:-chroot}"
     tmpdir="${TMPDIR:-/tmp}"
@@ -51,6 +88,15 @@ _images stream:
             ;;
         *)
             echo "unsupported online stream: $stream" >&2
+            exit 2
+            ;;
+    esac
+
+    case "$architecture" in
+        both|amd64|arm64|manifests) ;;
+        *)
+            echo "unsupported online architecture: $architecture" >&2
+            echo "expected both, amd64, arm64, or manifests" >&2
             exit 2
             ;;
     esac
@@ -91,6 +137,18 @@ _images stream:
             flatpak-spawn --host env TMPDIR="$tmpdir" buildah "$@"
         else
             echo "buildah is required to build and publish images" >&2
+            exit 1
+        fi
+    }
+
+    run_skopeo() {
+        if command -v skopeo >/dev/null 2>&1; then
+            skopeo "$@"
+        elif command -v flatpak-spawn >/dev/null 2>&1 \
+            && flatpak-spawn --host sh -lc 'command -v skopeo >/dev/null 2>&1'; then
+            flatpak-spawn --host skopeo "$@"
+        else
+            echo "skopeo is required to publish split-runner manifests" >&2
             exit 1
         fi
     }
@@ -290,6 +348,56 @@ _images stream:
         tr -d '\r\n' < "$digest_file" | grep -Eq '^sha256:[0-9a-f]{64}$'
     }
 
+    promote_remote_architecture() {
+        local name="$1"
+        local architecture="$2"
+        local digest
+        local destination="${namespace}/${name}:${architecture}${arch_suffix}"
+
+        digest="$(tr -d '\r\n' \
+            < "$state_dir/${name}-${architecture}.digest")"
+        printf '\n==> Publishing %s\n' "$destination"
+        run_skopeo copy \
+            --src-tls-verify="$tls_verify" \
+            --dest-tls-verify="$tls_verify" \
+            "docker://${namespace}/${name}@${digest}" \
+            "docker://$destination"
+    }
+
+    preflight_digests() {
+        local verify_remote="${1:-false}"
+        local name architecture digest digest_file
+        local actual_architecture architecture_format
+
+        architecture_format="$(printf '\173\173.Architecture\175\175')"
+
+        for name in "${image_names[@]}"; do
+            for architecture in amd64 arm64; do
+                digest_file="$state_dir/${name}-${architecture}.digest"
+                if [[ ! -s "$digest_file" ]]; then
+                    echo "missing image digest: $digest_file" >&2
+                    exit 1
+                fi
+                digest="$(tr -d '\r\n' < "$digest_file")"
+                if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+                    echo "invalid image digest in $digest_file" >&2
+                    exit 1
+                fi
+                if [[ "$verify_remote" == true ]]; then
+                    actual_architecture="$(run_skopeo inspect \
+                        --tls-verify="$tls_verify" \
+                        --format "$architecture_format" \
+                        "docker://${namespace}/${name}@${digest}")"
+                    if [[ "$actual_architecture" != "$architecture" ]]; then
+                        printf 'expected %s for %s, got %s\n' \
+                            "$architecture" "$name" "$actual_architecture" >&2
+                        exit 1
+                    fi
+                fi
+            done
+        done
+    }
+
     publish_manifest() {
         local name="$1"
         local destination="${namespace}/${name}:${public_tag}"
@@ -301,7 +409,7 @@ _images stream:
         run_buildah manifest create "$local_manifest"
         for architecture in amd64 arm64; do
             digest="$(tr -d '\r\n' \
-                < "$state_dir/${name}-${architecture}-public.digest")"
+                < "$state_dir/${name}-${architecture}.digest")"
             [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
             run_buildah manifest add --tls-verify="$tls_verify" \
                 "$local_manifest" "docker://${namespace}/${name}@${digest}"
@@ -336,7 +444,8 @@ _images stream:
             fi
             ;;
     esac
-    if [[ "$sign_images" == true ]]; then
+    if [[ "$sign_images" == true \
+        && ( "$architecture" == both || "$architecture" == manifests ) ]]; then
         run_cosign version >/dev/null
     fi
 
@@ -352,10 +461,6 @@ _images stream:
         exit 1
     fi
 
-    native_arch="$(native_architecture)"
-    check_arch_runtime amd64
-    check_arch_runtime arm64
-
     registry_token="${REGISTRY_TOKEN:-${GITHUB_TOKEN:-}}"
     registry_user="${REGISTRY_USER:-${GITHUB_ACTOR:-}}"
     if [[ -n "$registry_token" ]]; then
@@ -368,23 +473,62 @@ _images stream:
                 --username "$registry_user" --password-stdin "$registry"
     fi
 
-    run_parallel build_amd64 build_arm64
+    if [[ "$architecture" == manifests ]]; then
+        preflight_digests true
+        for name in "${image_names[@]}"; do
+            promote_remote_architecture "$name" amd64
+            promote_remote_architecture "$name" arm64
+        done
+        for name in "${image_names[@]}"; do
+            publish_manifest "$name"
+        done
+        printf '\nPublished %s multi-architecture manifests to %s.\n' \
+            "$stream" "$namespace"
+        exit 0
+    fi
 
-    for name in "${image_names[@]}"; do
-        promote_architecture "$name" amd64
-        promote_architecture "$name" arm64
-        publish_manifest "$name"
-    done
+    native_arch="$(native_architecture)"
+    case "$architecture" in
+        both)
+            check_arch_runtime amd64
+            check_arch_runtime arm64
+            run_parallel build_amd64 build_arm64
+            build_arches=(amd64 arm64)
+            ;;
+        amd64)
+            check_arch_runtime amd64
+            build_amd64
+            build_arches=(amd64)
+            ;;
+        arm64)
+            check_arch_runtime arm64
+            build_arm64
+            build_arches=(arm64)
+            ;;
+    esac
 
-    printf '\nPublished %s images for AMD64 and ARM64 to %s.\n' \
-        "$stream" "$namespace"
+    if [[ "$architecture" == both ]]; then
+        preflight_digests false
+        for name in "${image_names[@]}"; do
+            for image_arch in "${build_arches[@]}"; do
+                promote_architecture "$name" "$image_arch"
+            done
+            publish_manifest "$name"
+        done
+        printf '\nPublished %s images for AMD64 and ARM64 to %s.\n' \
+            "$stream" "$namespace"
+    else
+        printf '\nBuilt and staged %s %s images at %s.\n' \
+            "$stream" "$architecture" "$namespace"
+    fi
 
 [private]
-_media:
+_media architecture="both":
     #!/usr/bin/env bash
     set -euo pipefail
 
     repo={{ quote(justfile_directory()) }}
+    architecture={{ quote(architecture) }}
     namespace="${IMAGE_NAMESPACE:-ghcr.io/noobping}"
     output="$repo/dist/online"
 
@@ -547,6 +691,14 @@ _media:
     }
 
     cd "$repo"
+    case "$architecture" in
+        both|amd64|arm64) ;;
+        *)
+            echo "unsupported media architecture: $architecture" >&2
+            echo "expected both, amd64, or arm64" >&2
+            exit 2
+            ;;
+    esac
     mkdir -p "$output/butane" "$output/cache" "$output/ign" "$output/iso"
     command -v flock >/dev/null 2>&1 || {
         echo "flock is required to coordinate media builds" >&2
@@ -581,9 +733,14 @@ _media:
     render_guest minecraft
     render_guest jellyfin
 
-    run_parallel build_x86_64_media build_aarch64_media
+    case "$architecture" in
+        both) run_parallel build_x86_64_media build_aarch64_media ;;
+        amd64) build_x86_64_media ;;
+        arm64) build_aarch64_media ;;
+    esac
 
-    printf '\nBuilt online Ignition and installer artifacts in %s.\n' "$output"
+    printf '\nBuilt %s online Ignition and installer artifacts in %s.\n' \
+        "$architecture" "$output"
 
 [private]
 _release:
