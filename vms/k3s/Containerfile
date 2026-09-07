@@ -29,14 +29,14 @@ RUN set -euxo pipefail; \
     "https://github.com/k3s-io/k3s-selinux/releases/download/${K3S_SELINUX_RELEASE}/${selinux_rpm}"; \
   printf '%s  %s\n' "${K3S_SELINUX_SHA256}" "/tmp/${selinux_rpm}" \
     | sha256sum --check --strict -; \
-  rpm-ostree install -y sqlite "/tmp/${selinux_rpm}"; \
+  dnf install -y sqlite "/tmp/${selinux_rpm}"; \
   install -o root -g root -m 0755 "/tmp/${k3s_asset}" /usr/bin/k3s; \
   ln -sf k3s /usr/bin/kubectl; \
   ln -sf k3s /usr/bin/crictl; \
   restorecon -v /usr/bin/k3s; \
   rm -f "/tmp/${k3s_asset}" "/tmp/${selinux_rpm}"; \
-  rm -rf /var/cache/rpm-ostree /var/lib/rpm-ostree/cache /var/cache/dnf; \
-  ostree container commit
+  dnf clean all; \
+  if test -d /sysroot/ostree/repo; then ostree container commit; fi
 
 COPY config.yaml /etc/rancher/k3s/config.yaml
 COPY --chmod=0755 bin/ /usr/libexec/infrastructure/
@@ -48,4 +48,6 @@ COPY sysctl.conf /etc/sysctl.d/90-k3s.conf
 
 RUN set -euxo pipefail; \
   systemctl enable k3s.service var-lib-rancher-k3s-backups.mount; \
-  ostree container commit
+  if test -d /sysroot/ostree/repo; then ostree container commit; fi
+
+RUN if ! test -d /sysroot/ostree/repo; then bootc container lint; fi

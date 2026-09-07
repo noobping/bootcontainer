@@ -5,11 +5,11 @@ LABEL org.opencontainers.image.title="IPS"
 LABEL org.opencontainers.image.description="a inline IPS base image"
 
 RUN set -euxo pipefail; \
-  rpm-ostree install -y \
+  dnf install -y \
     clamav clamav-data clamd clamav-freshclam \
     suricata \
     tuned upower; \
-  rm -rf /var/cache/rpm-ostree /var/lib/rpm-ostree/cache /var/cache/dnf; \
+  dnf clean all; \
   mkdir -p \
     /etc/sysctl.d \
     /etc/systemd/system/clamav-freshclam.service.d \
@@ -21,7 +21,7 @@ RUN set -euxo pipefail; \
     /usr/share/clamav \
     /usr/share/suricata \
     /usr/libexec/infrastructure; \
-  ostree container commit
+  if test -d /sysroot/ostree/repo; then ostree container commit; fi
 
 COPY clamav-clamonacc.service /etc/systemd/system/clamav-clamonacc.service
 COPY clamav-freshclam.service.d/10-prepare.conf /etc/systemd/system/clamav-freshclam.service.d/10-prepare.conf
@@ -79,4 +79,6 @@ RUN set -euxo pipefail; \
     /etc/systemd/system/multi-user.target.wants/upower.service; \
   ln -sf /etc/systemd/system/suricata-update.timer \
     /etc/systemd/system/timers.target.wants/suricata-update.timer; \
-  ostree container commit
+  if test -d /sysroot/ostree/repo; then ostree container commit; fi
+
+RUN if ! test -d /sysroot/ostree/repo; then bootc container lint; fi

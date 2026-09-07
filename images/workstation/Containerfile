@@ -14,16 +14,16 @@ LABEL org.opencontainers.image.title="Workstation"
 LABEL org.opencontainers.image.description="a bootable container"
 
 COPY --from=pkgs /tmp/firmware-packages.txt /tmp/firmware-packages.txt
-RUN xargs -r rpm-ostree install -y < /tmp/firmware-packages.txt
 RUN set -euxo pipefail; \
+  xargs -r dnf install -y < /tmp/firmware-packages.txt; \
   if rpm -q nfs-utils-coreos >/dev/null 2>&1; then \
-    rpm-ostree override remove nfs-utils-coreos; \
+    dnf remove -y --no-autoremove nfs-utils-coreos; \
   fi; \
-  rm -rf /var/cache/rpm-ostree /var/lib/rpm-ostree/cache /var/cache/dnf; \
-  ostree container commit
+  dnf clean all; \
+  if test -d /sysroot/ostree/repo; then ostree container commit; fi
 
 RUN set -euxo pipefail; \
-  rpm-ostree install -y \
+  dnf install -y \
     cachefilesd \
     NetworkManager-wifi NetworkManager-bluetooth NetworkManager-openvpn firewalld \
     accountsservice authselect fprintd fprintd-pam \
@@ -40,11 +40,11 @@ RUN set -euxo pipefail; \
     mesa-dri-drivers switcheroo-control virglrenderer \
     libhid hidapi openrgb-udev-rules \
     steam-devices; \
-  rm -rf /var/cache/rpm-ostree /var/lib/rpm-ostree/cache /var/cache/dnf; \
-  ostree container commit
+  dnf clean all; \
+  if test -d /sysroot/ostree/repo; then ostree container commit; fi
 
 RUN set -euxo pipefail; \
-  rpm-ostree install -y \
+  dnf install -y \
     gdm ibus ibus-mozc \
     glibc-all-langpacks google-noto-color-emoji-fonts google-noto-sans-cjk-fonts fontconfig \
     gnome-backgrounds gnome-control-center gnome-disk-utility gnome-initial-setup \
@@ -53,24 +53,24 @@ RUN set -euxo pipefail; \
     pipewire wireplumber \
     plymouth plymouth-theme-spinner \
     ptyxis; \
-  rm -rf /var/cache/rpm-ostree /var/lib/rpm-ostree/cache /var/cache/dnf; \
-  ostree container commit
+  dnf clean all; \
+  if test -d /sysroot/ostree/repo; then ostree container commit; fi
 
 RUN set -euxo pipefail; \
-  rpm-ostree install -y \
+  dnf install -y \
     nautilus nautilus-python python3-pygit2 nautilus-gsconnect sushi \
     seahorse-nautilus tnef-nautilus papers-nautilus \
     pcsc-lite pcsc-lite-ccid opensc gnupg2 gnupg2-scdaemon yubikey-manager \
     flatpak flatpak-spawn \
     fuse fuse-libs \
     tracker-miners ffmpegthumbnailer gstreamer1-libav gstreamer1-plugin-openh264; \
-  rm -rf /var/cache/rpm-ostree /var/lib/rpm-ostree/cache /var/cache/dnf; \
-  ostree container commit
+  dnf clean all; \
+  if test -d /sysroot/ostree/repo; then ostree container commit; fi
 
 RUN set -euxo pipefail; \
-  rpm-ostree override remove gnome-tour; \
-  rm -rf /var/cache/rpm-ostree /var/lib/rpm-ostree/cache /var/cache/dnf; \
-  ostree container commit
+  dnf remove -y --no-autoremove gnome-tour; \
+  dnf clean all; \
+  if test -d /sysroot/ostree/repo; then ostree container commit; fi
 
 RUN set -euxo pipefail; \
   mkdir -p \
@@ -196,4 +196,6 @@ RUN set -euxo pipefail; \
   ln -sf /dev/null /etc/systemd/system/nftables.service; \
 
   printf '%s\n' "INITIAL_SETUP_ENABLE=YES" > /etc/sysconfig/initial-setup; \
-  ostree container commit
+  if test -d /sysroot/ostree/repo; then ostree container commit; fi
+
+RUN if ! test -d /sysroot/ostree/repo; then bootc container lint; fi

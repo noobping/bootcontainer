@@ -6,7 +6,7 @@ LABEL org.opencontainers.image.title="Sway"
 LABEL org.opencontainers.image.description="a Sway desktop bootable container"
 
 RUN set -euxo pipefail; \
-  rpm-ostree install -y \
+  dnf install -y \
     bemenu \
     brightnessctl \
     clipman \
@@ -33,8 +33,8 @@ RUN set -euxo pipefail; \
     xdg-user-dirs \
     xdg-utils \
     xdg-desktop-portal-wlr; \
-  rm -rf /var/cache/rpm-ostree /var/lib/rpm-ostree/cache /var/cache/dnf; \
-  ostree container commit
+  dnf clean all; \
+  if test -d /sysroot/ostree/repo; then ostree container commit; fi
 
 COPY skel /etc/skel
 
@@ -44,4 +44,6 @@ RUN set -euxo pipefail; \
   else \
     printf '%s\n' 'XSession=sway' >> /var/lib/AccountsService/default; \
   fi; \
-  ostree container commit
+  if test -d /sysroot/ostree/repo; then ostree container commit; fi
+
+RUN if ! test -d /sysroot/ostree/repo; then bootc container lint; fi

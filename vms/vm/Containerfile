@@ -6,18 +6,18 @@ LABEL org.opencontainers.image.title="Virtual machine base"
 LABEL org.opencontainers.image.description="Fedora CoreOS bootc base for KVM guests"
 
 RUN set -euxo pipefail; \
-  rpm-ostree install -y cachefilesd qemu-guest-agent; \
+  dnf install -y cachefilesd qemu-guest-agent; \
   rpm -q cachefilesd qemu-guest-agent tuned; \
   command -v mount.nfs; \
   command -v mount.nfs4; \
-  rm -rf /var/cache/rpm-ostree /var/lib/rpm-ostree/cache /var/cache/dnf; \
+  dnf clean all; \
   mkdir -p \
     /etc/nftables/rules \
     /etc/systemd/system/clamav-prepare.service.d \
     /etc/systemd/system/qemu-guest-agent.service.d \
     /etc/tuned \
     /usr/libexec/infrastructure; \
-  ostree container commit
+  if test -d /sysroot/ostree/repo; then ostree container commit; fi
 
 COPY cachefilesd.conf /etc/cachefilesd.conf
 COPY nfs-selinux.service /etc/systemd/system/nfs-selinux.service
@@ -41,4 +41,6 @@ RUN set -euxo pipefail; \
   grep -q 'include "/etc/nftables/suricata-vm.nft"' /etc/nftables/main.nft \
   || printf '\ninclude "/etc/nftables/suricata-vm.nft"\n' >> /etc/nftables/main.nft; \
   systemctl enable cachefilesd.service nfs-selinux.service qemu-guest-agent.service tuned.service; \
-  ostree container commit
+  if test -d /sysroot/ostree/repo; then ostree container commit; fi
+
+RUN if ! test -d /sysroot/ostree/repo; then bootc container lint; fi

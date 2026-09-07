@@ -6,12 +6,13 @@ LABEL org.opencontainers.image.description="a bootable container"
 
 RUN set -euxo pipefail; \
   if rpm -q nfs-utils-coreos >/dev/null 2>&1; then \
-    rpm-ostree override remove nfs-utils-coreos; \
+    dnf remove -y --no-autoremove nfs-utils-coreos; \
   fi; \
-  rm -rf /var/cache/rpm-ostree /var/lib/rpm-ostree/cache /var/cache/dnf; \
-  ostree container commit
+  dnf clean all; \
+  if test -d /sysroot/ostree/repo; then ostree container commit; fi
 
-RUN rpm-ostree install -y \
+RUN set -euxo pipefail; \
+  dnf install -y \
     coreos-installer ignition-validate jq \
     libvirt nfs-utils qemu-kvm pcp-zeroconf smartmontools \
     cockpit-system cockpit-ostree cockpit-podman cockpit-machines cockpit-storaged cockpit-files cockpit-networkmanager cockpit-sosreport cockpit-kdump cockpit-selinux \
@@ -20,7 +21,7 @@ RUN rpm-ostree install -y \
     toolbox git tmux; \
 
   ln -s /var/srv/git /git; \
-  rm -rf /var/cache/rpm-ostree /var/lib/rpm-ostree/cache /var/cache/dnf; \
+  dnf clean all; \
   mkdir -p \
   /etc/exports.d \
   /etc/nftables/rules \
@@ -38,7 +39,7 @@ RUN rpm-ostree install -y \
   /var/www; \
   install -d -m 0755 -o 1007 -g 1007 /var/www/git; \
   ln -s /var/www/git /web; \
-  ostree container commit
+  if test -d /sysroot/ostree/repo; then ostree container commit; fi
 
 COPY --chmod=0600 nftables /etc/nftables/rules
 COPY --chmod=0755 bin/todo bin/vm-bridge bin/vm-deploy /usr/bin/
@@ -82,4 +83,6 @@ RUN set -euxo pipefail; \
     /etc/systemd/system/multi-user.target.wants/nut-configure.service; \
   ln -sf /etc/systemd/system/btrfs-backup.timer \
     /etc/systemd/system/timers.target.wants/btrfs-backup.timer; \
-  ostree container commit
+  if test -d /sysroot/ostree/repo; then ostree container commit; fi
+
+RUN if ! test -d /sysroot/ostree/repo; then bootc container lint; fi
