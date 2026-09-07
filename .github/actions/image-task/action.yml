@@ -1,0 +1,43 @@
+name: Build one image with Pipeline
+description: Free runner storage, build one architecture image, and upload its digest
+
+inputs:
+  stream:
+    description: Fedora CoreOS stream
+    required: true
+  image:
+    description: Image name
+    required: true
+  architecture:
+    description: OCI architecture
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Free runner disk space
+      uses: jlumbroso/free-disk-space@v1.3.1
+      with:
+        tool-cache: true
+
+    - name: Build with Pipeline
+      uses: ./.github/actions/pipeline
+      env:
+        BUILD_ARCHITECTURE: ${{ inputs.architecture }}
+        BUILD_IMAGE_NAME: ${{ inputs.image }}
+        BUILD_STREAM: ${{ inputs.stream }}
+        PUBLISH: "true"
+        REGISTRY_TOKEN: ${{ github.token }}
+        REGISTRY_USER: ${{ github.actor }}
+      with:
+        arguments: image-task
+
+    - name: Upload image digest
+      uses: actions/upload-artifact@v4
+      with:
+        name: image-digest-${{ inputs.stream }}-${{ github.run_id }}-${{ inputs.image }}-${{ inputs.architecture }}
+        path: dist/online/state/${{ inputs.stream }}/${{ github.run_id }}/${{ inputs.image }}-${{ inputs.architecture }}.digest
+        compression-level: 0
+        if-no-files-found: error
+        overwrite: true
+        retention-days: 30

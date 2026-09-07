@@ -30,56 +30,28 @@ jobs:
             check
 
   build:
-    name: Offline media (${{ matrix.arch }})
+    name: Offline ${{ matrix.profile }} (${{ matrix.platform.architecture }})
     needs: check
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.platform.runner }}
     timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: amd64
-            coreos_arch: x86_64
+        profile: [nas, workstation, sway]
+        platform:
+          - architecture: amd64
+            coreos: x86_64
             runner: ubuntu-latest
-          - arch: arm64
-            coreos_arch: aarch64
+          - architecture: arm64
+            coreos: aarch64
             runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
-      - uses: jlumbroso/free-disk-space@v1.3.1
+      - uses: ./.github/actions/offline-task
         with:
-          tool-cache: true
-      - uses: ./.github/actions/pipeline
-        with:
-          arguments: offline-${{ matrix.arch }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: nas-offline-${{ github.run_id }}-${{ matrix.arch }}
-          compression-level: 0
-          overwrite: true
-          retention-days: 1
-          path: dist/iso/nas-offline-${{ matrix.coreos_arch }}.iso*
-          if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        with:
-          name: workstation-offline-${{ github.run_id }}-${{ matrix.arch }}
-          compression-level: 0
-          overwrite: true
-          retention-days: 1
-          path: dist/iso/workstation-offline-${{ matrix.coreos_arch }}.iso*
-          if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        with:
-          name: sway-offline-${{ github.run_id }}-${{ matrix.arch }}
-          compression-level: 0
-          overwrite: true
-          retention-days: 1
-          path: dist/iso/sway-offline-${{ matrix.coreos_arch }}.iso*
-          if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        if: matrix.arch == 'amd64'
-        with:
-          name: offline-ignition-${{ github.run_id }}
-          path: dist/ign/*.ign
-          if-no-files-found: error
-          overwrite: true
+          profile: ${{ matrix.profile }}
+          architecture: ${{ matrix.platform.architecture }}
+          coreos-architecture: ${{ matrix.platform.coreos }}
+          upload-ignition: >-
+            ${{ matrix.profile == 'nas' &&
+                matrix.platform.architecture == 'amd64' }}

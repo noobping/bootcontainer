@@ -1,5 +1,3 @@
-version: 1
-
 on:
   pre-commit: [check]
   pre-push: [check]
@@ -54,63 +52,44 @@ pipelines:
       build:
         just: offline-nas-build
 
+  offline-sway:
+    needs: [check]
+    jobs:
+      build:
+        just: offline-sway-build
+
   release:
     needs: [online]
     jobs:
       publish:
         just: online::release
 
-  stable-amd64:
+  image-task:
     jobs:
       build:
-        just: online::stable-amd64
+        just: online::image-task
 
-  stable-arm64:
+  manifest-preflight:
     jobs:
-      build:
-        just: online::stable-arm64
+      verify:
+        just: online::manifest-preflight
 
-  stable-manifests:
+  manifest-task:
     jobs:
       publish:
-        just: online::stable-manifests
+        just: online::manifest-task
 
-  media-amd64:
+  media-task:
     jobs:
       build:
-        just: online::media-amd64
-
-  media-arm64:
-    jobs:
-      build:
-        just: online::media-arm64
+        just: online::media-task
 
   release-assets:
     jobs:
       publish:
         just: online::release-assets
 
-  next-amd64:
+  offline-task:
     jobs:
       build:
-        just: online::next-amd64
-
-  next-arm64:
-    jobs:
-      build:
-        just: online::next-arm64
-
-  next-manifests:
-    jobs:
-      publish:
-        just: online::next-manifests
-
-  offline-amd64:
-    jobs:
-      build:
-        just: offline-amd64-build
-
-  offline-arm64:
-    jobs:
-      build:
-        just: offline-arm64-build
+        just: offline-task

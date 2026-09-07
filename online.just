@@ -2,45 +2,13 @@
 stable:
     @{{ quote(just_executable()) }} online::_images stable both
 
-# Build and stage the stable AMD64 architecture images.
-stable-amd64:
-    @{{ quote(just_executable()) }} online::_images stable amd64
-
-# Build and stage the stable ARM64 architecture images.
-stable-arm64:
-    @{{ quote(just_executable()) }} online::_images stable arm64
-
-# Publish stable multi-architecture manifests from this run's digests.
-stable-manifests:
-    @{{ quote(just_executable()) }} online::_images stable manifests
-
 # Build and publish the experimental FCOS next image graph.
 next:
     @{{ quote(just_executable()) }} online::_images next both
 
-# Build and stage the next-stream AMD64 architecture images.
-next-amd64:
-    @{{ quote(just_executable()) }} online::_images next amd64
-
-# Build and stage the next-stream ARM64 architecture images.
-next-arm64:
-    @{{ quote(just_executable()) }} online::_images next arm64
-
-# Publish next-stream multi-architecture manifests from this run's digests.
-next-manifests:
-    @{{ quote(just_executable()) }} online::_images next manifests
-
 # Build online installers and every Ignition configuration.
 media:
     @{{ quote(just_executable()) }} online::_media both
-
-# Build AMD64 online installers and Ignition configurations.
-media-amd64:
-    @{{ quote(just_executable()) }} online::_media amd64
-
-# Build ARM64 online installers and Ignition configurations.
-media-arm64:
-    @{{ quote(just_executable()) }} online::_media arm64
 
 # Publish the online installers to the continuous GitHub release.
 release:
@@ -50,14 +18,51 @@ release:
 release-assets:
     @{{ quote(just_executable()) }} online::_release
 
+# Build one run-scoped image selected by the build environment.
+image-task:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    stream="${BUILD_STREAM:?BUILD_STREAM is required}"
+    architecture="${BUILD_ARCHITECTURE:?BUILD_ARCHITECTURE is required}"
+    image="${BUILD_IMAGE_NAME:?BUILD_IMAGE_NAME is required}"
+    just={{ quote(just_executable()) }}
+    exec "$just" online::_images "$stream" "$architecture" "$image"
+
+# Publish one multi-architecture image selected by the build environment.
+manifest-task:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    stream="${BUILD_STREAM:?BUILD_STREAM is required}"
+    image="${BUILD_IMAGE_NAME:?BUILD_IMAGE_NAME is required}"
+    just={{ quote(just_executable()) }}
+    exec "$just" online::_images "$stream" manifests "$image"
+
+# Verify every staged image digest before any public tag is changed.
+manifest-preflight:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    stream="${BUILD_STREAM:?BUILD_STREAM is required}"
+    just={{ quote(just_executable()) }}
+    exec "$just" online::_images "$stream" preflight all
+
+# Build one installer selected by the build environment.
+media-task:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    architecture="${BUILD_ARCHITECTURE:?BUILD_ARCHITECTURE is required}"
+    profile="${BUILD_PROFILE:?BUILD_PROFILE is required}"
+    just={{ quote(just_executable()) }}
+    exec "$just" online::_media "$architecture" "$profile"
+
 [private]
-_images stream architecture="both":
+_images stream architecture="both" selection="all":
     #!/usr/bin/env bash
     set -euo pipefail
 
     repo={{ quote(justfile_directory()) }}
     stream={{ quote(stream) }}
     architecture={{ quote(architecture) }}
+    selection={{ quote(selection) }}
     namespace="${IMAGE_NAMESPACE:-ghcr.io/noobping}"
     isolation="${BUILDAH_ISOLATION:-chroot}"
     tmpdir="${TMPDIR:-/tmp}"
@@ -78,13 +83,13 @@ _images stream architecture="both":
             fcos_stream=stable
             public_tag=latest
             arch_suffix=
-            image_names=(ips workstation sway nas vm k3s minecraft jellyfin)
+            all_image_names=(ips workstation sway nas vm k3s minecraft jellyfin)
             ;;
         next)
             fcos_stream=next
             public_tag=next
             arch_suffix=-next
-            image_names=(ips workstation sway)
+            all_image_names=(ips workstation sway)
             ;;
         *)
             echo "unsupported online stream: $stream" >&2
@@ -92,11 +97,28 @@ _images stream architecture="both":
             ;;
     esac
 
+    if [[ "$selection" == all ]]; then
+        image_names=("${all_image_names[@]}")
+    else
+        selection_supported=false
+        for image_name in "${all_image_names[@]}"; do
+            if [[ "$selection" == "$image_name" ]]; then
+                selection_supported=true
+                break
+            fi
+        done
+        if [[ "$selection_supported" != true ]]; then
+            echo "unsupported $stream image selection: $selection" >&2
+            exit 2
+        fi
+        image_names=("$selection")
+    fi
+
     case "$architecture" in
-        both|amd64|arm64|manifests) ;;
+        both|amd64|arm64|manifests|preflight) ;;
         *)
             echo "unsupported online architecture: $architecture" >&2
-            echo "expected both, amd64, arm64, or manifests" >&2
+            echo "expected both, amd64, arm64, manifests, or preflight" >&2
             exit 2
             ;;
     esac
@@ -313,13 +335,26 @@ _images stream architecture="both":
     build_architecture() {
         image_arch="$1"
         stage_tag="${image_arch}-${stream}-run-${run_id}"
-        printf '\n========== Building %s %s ==========\n' "$stream" "$image_arch"
-        build_ips
-        if [[ "$stream" == stable ]]; then
-            run_parallel build_workstation_branch build_nas build_vm_branch
-        else
-            build_workstation_branch
-        fi
+        printf '\n========== Building %s %s %s ==========\n' \
+            "$stream" "$image_arch" "$selection"
+        case "$selection" in
+            all)
+                build_ips
+                if [[ "$stream" == stable ]]; then
+                    run_parallel build_workstation_branch build_nas build_vm_branch
+                else
+                    build_workstation_branch
+                fi
+                ;;
+            ips) build_ips ;;
+            workstation) build_workstation ;;
+            sway) build_sway ;;
+            nas) build_nas ;;
+            vm) build_vm ;;
+            k3s) build_k3s ;;
+            minecraft) build_minecraft ;;
+            jellyfin) build_jellyfin ;;
+        esac
     }
 
     build_amd64() {
@@ -482,8 +517,14 @@ _images stream architecture="both":
         for name in "${image_names[@]}"; do
             publish_manifest "$name"
         done
-        printf '\nPublished %s multi-architecture manifests to %s.\n' \
-            "$stream" "$namespace"
+        printf '\nPublished %s %s multi-architecture manifest(s) to %s.\n' \
+            "$stream" "$selection" "$namespace"
+        exit 0
+    fi
+
+    if [[ "$architecture" == preflight ]]; then
+        preflight_digests true
+        printf '\nVerified every %s staged image digest.\n' "$stream"
         exit 0
     fi
 
@@ -515,20 +556,21 @@ _images stream architecture="both":
             done
             publish_manifest "$name"
         done
-        printf '\nPublished %s images for AMD64 and ARM64 to %s.\n' \
-            "$stream" "$namespace"
+        printf '\nPublished %s %s images for AMD64 and ARM64 to %s.\n' \
+            "$stream" "$selection" "$namespace"
     else
-        printf '\nBuilt and staged %s %s images at %s.\n' \
-            "$stream" "$architecture" "$namespace"
+        printf '\nBuilt and staged %s %s %s image(s) at %s.\n' \
+            "$stream" "$architecture" "$selection" "$namespace"
     fi
 
 [private]
-_media architecture="both":
+_media architecture="both" profile="all":
     #!/usr/bin/env bash
     set -euo pipefail
 
     repo={{ quote(justfile_directory()) }}
     architecture={{ quote(architecture) }}
+    selected_profile={{ quote(profile) }}
     namespace="${IMAGE_NAMESPACE:-ghcr.io/noobping}"
     output="$repo/dist/online"
 
@@ -659,7 +701,7 @@ _media architecture="both":
         fi
         base_iso="dist/online/cache/$base_iso"
 
-        for profile in nas workstation sway; do
+        for profile in "${media_profiles[@]}"; do
             out_iso="dist/online/iso/${profile}-${coreos_arch}.iso"
             printf '\n==> Building %s\n' "$out_iso"
             rm -f "$out_iso" "${out_iso}.sha256"
@@ -696,6 +738,15 @@ _media architecture="both":
         *)
             echo "unsupported media architecture: $architecture" >&2
             echo "expected both, amd64, or arm64" >&2
+            exit 2
+            ;;
+    esac
+    case "$selected_profile" in
+        all) media_profiles=(nas workstation sway) ;;
+        nas|workstation|sway) media_profiles=("$selected_profile") ;;
+        *)
+            echo "unsupported media profile: $selected_profile" >&2
+            echo "expected all, nas, workstation, or sway" >&2
             exit 2
             ;;
     esac
@@ -739,8 +790,8 @@ _media architecture="both":
         arm64) build_aarch64_media ;;
     esac
 
-    printf '\nBuilt %s online Ignition and installer artifacts in %s.\n' \
-        "$architecture" "$output"
+    printf '\nBuilt %s %s online Ignition and installer artifacts in %s.\n' \
+        "$architecture" "$selected_profile" "$output"
 
 [private]
 _release:

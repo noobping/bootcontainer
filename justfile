@@ -15,18 +15,25 @@ check-just:
     script="$(mktemp)"
     trap 'rm -f -- "$script"' EXIT
     commands=(
-        "online::_images stable both"
-        "online::_images stable amd64"
-        "online::_images stable manifests"
-        "online::_images next both"
-        "online::_images next arm64"
-        "online::_images next manifests"
-        "online::_media both"
-        "online::_media amd64"
+        "online::_images stable both all"
+        "online::_images stable amd64 nas"
+        "online::_images stable preflight all"
+        "online::_images stable manifests jellyfin"
+        "online::_images next both all"
+        "online::_images next arm64 workstation"
+        "online::_images next manifests sway"
+        "online::_media both all"
+        "online::_media amd64 nas"
         "online::_release"
+        "online::image-task"
+        "online::manifest-preflight"
+        "online::manifest-task"
+        "online::media-task"
         "_offline all both"
         "_offline workstation both"
         "_offline nas both"
+        "_offline sway both"
+        "offline-task"
     )
     for command in "${commands[@]}"; do
         read -r -a arguments <<< "$command"
@@ -64,13 +71,18 @@ offline-workstation-build:
 offline-nas-build:
     @{{ quote(just_executable()) }} _offline nas both
 
-# Build every offline image and AMD64 installer on a native AMD64 runner.
-offline-amd64-build:
-    @{{ quote(just_executable()) }} _offline all amd64
+# Build the offline Sway image and installers for both architectures.
+offline-sway-build:
+    @{{ quote(just_executable()) }} _offline sway both
 
-# Build every offline image and ARM64 installer on a native ARM64 runner.
-offline-arm64-build:
-    @{{ quote(just_executable()) }} _offline all arm64
+# Build one offline installer selected by the build environment.
+offline-task:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    profile="${BUILD_PROFILE:?BUILD_PROFILE is required}"
+    architecture="${BUILD_ARCHITECTURE:?BUILD_ARCHITECTURE is required}"
+    just={{ quote(just_executable()) }}
+    exec "$just" _offline "$profile" "$architecture"
 
 [private]
 _offline target architecture:
@@ -87,7 +99,7 @@ _offline target architecture:
     source_url="$(git -C "$repo" config --get remote.origin.url || printf '%s' "$repo")"
 
     case "$target" in
-        all|workstation|nas) ;;
+        all|workstation|nas|sway) ;;
         native|both|amd64|x86_64|arm64|aarch64)
             if [[ "$architecture" != native ]]; then
                 echo "architecture specified twice: $target $architecture" >&2
@@ -583,6 +595,10 @@ _offline target architecture:
             profiles=(nas)
             image_names=(ips nas)
             ;;
+        sway)
+            profiles=(sway)
+            image_names=(ips workstation sway)
+            ;;
     esac
 
     if ! command -v flock >/dev/null 2>&1; then
@@ -616,17 +632,20 @@ _offline target architecture:
         workstation
     build_ignition dist/butane/setup.rendered.bu dist/ign/setup.ign
 
-    for profile in "${profiles[@]}"; do
-        if [[ "$profile" == sway ]]; then
-            render_profile sway workstation
-        else
-            render_profile "$profile" "$profile"
-        fi
-    done
-
-    if [[ "$target" == all ]]; then
+    if [[ "$target" == all || "${BUILD_ALL_IGNITION:-false}" == true ]]; then
+        render_profile nas nas
+        render_profile workstation workstation
+        render_profile sway workstation
         for guest in k3s minecraft jellyfin; do
             render_guest "$guest"
+        done
+    else
+        for profile in "${profiles[@]}"; do
+            if [[ "$profile" == sway ]]; then
+                render_profile sway workstation
+            else
+                render_profile "$profile" "$profile"
+            fi
         done
     fi
 
@@ -641,6 +660,7 @@ _offline target architecture:
             all) run_parallel build_workstation_branch build_nas build_vm_branch ;;
             workstation) build_workstation ;;
             nas) build_nas ;;
+            sway) build_workstation_branch ;;
         esac
 
         if ! ls -1 fedora-coreos-*-live-iso."${coreos_arch}".iso >/dev/null 2>&1; then

@@ -1,0 +1,56 @@
+name: Build one offline installer with Pipeline
+description: Free runner storage, build one profile closure, and upload its installer
+
+inputs:
+  profile:
+    description: Installer profile
+    required: true
+  architecture:
+    description: OCI architecture
+    required: true
+  coreos-architecture:
+    description: Fedora CoreOS architecture
+    required: true
+  upload-ignition:
+    description: Render and upload every Ignition configuration
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Free runner disk space
+      uses: jlumbroso/free-disk-space@v1.3.1
+      with:
+        tool-cache: true
+
+    - name: Build with Pipeline
+      uses: ./.github/actions/pipeline
+      env:
+        BUILD_ALL_IGNITION: ${{ inputs.upload-ignition }}
+        BUILD_ARCHITECTURE: ${{ inputs.architecture }}
+        BUILD_PROFILE: ${{ inputs.profile }}
+      with:
+        arguments: offline-task
+
+    - name: Upload installer
+      uses: actions/upload-artifact@v4
+      with:
+        name: offline-media-${{ github.run_id }}-${{ inputs.profile }}-${{ inputs.architecture }}
+        path: |
+          dist/iso/${{ inputs.profile }}-offline-${{ inputs.coreos-architecture }}.iso
+          dist/iso/${{ inputs.profile }}-offline-${{ inputs.coreos-architecture }}.iso.sha256
+        compression-level: 0
+        if-no-files-found: error
+        overwrite: true
+        retention-days: 1
+
+    - name: Upload Ignition configurations
+      if: inputs.upload-ignition == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: offline-ignition-${{ github.run_id }}
+        path: dist/ign/*.ign
+        if-no-files-found: error
+        overwrite: true
+        retention-days: 1

@@ -16,6 +16,7 @@ PUBLISH=true pipeline next     # Fedora CoreOS next-stream images
 pipeline offline               # all offline media, AMD64 and ARM64
 pipeline offline-workstation   # Workstation offline media, both architectures
 pipeline offline-nas           # NAS offline media, both architectures
+pipeline offline-sway          # Sway offline media, both architectures
 PUBLISH=true pipeline release  # stable build followed by GitHub publication
 ```
 
@@ -38,7 +39,7 @@ native-only offline build, call Just directly:
 ```sh
 just offline [selection] [architecture]
 
-# selection:    all (default), workstation, nas
+# selection:    all (default), workstation, sway, nas
 # architecture: native (default), both, amd64, arm64
 just offline workstation amd64
 just offline amd64
@@ -66,16 +67,18 @@ and contain the image archive; online ISO names do not.
 
 ## GitHub Actions
 
-GitHub uses the same Pipeline targets as local builds. The online workflow fans
-the image and media graphs out to native AMD64 and ARM64 runners, transfers
-only digests and finished media between jobs, then runs the manifest and
-release Pipeline targets. Stable failures stop publication; the separate
-next-stream jobs remain allowed to fail. The manual offline workflow builds
-both architectures on native runners and uploads each installer separately.
+GitHub uses small Pipeline targets: every image/architecture pair and every
+installer/architecture pair is a separate Actions job on a native runner.
+Actions provides the parallelism and dependency waves. Dependent image jobs
+use run-scoped registry tags; Actions artifacts carry their digests and the
+completed media. Each disk-heavy job first cleans the hosted runner and moves
+container storage to `/mnt`. Stable failures stop publication; the separate
+next-stream jobs remain allowed to fail.
 
-Workflow YAML is limited to runner preparation, permissions, and artifact
-transport. Image ordering, parallel branches, validation, publication, and
-release checks remain in Just and `pipeline.yml`.
+The manual offline workflow starts six independent jobs: NAS, Workstation, and
+Sway for AMD64 and ARM64. Each job builds only that installer's dependency
+closure and uploads one ISO plus its checksum. Local aggregate commands remain
+simple and may run independent Just branches in parallel on one machine.
 
 ## Publishing and build environment
 

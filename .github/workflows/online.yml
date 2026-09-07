@@ -10,7 +10,7 @@ on:
       - "justfile"
       - "online.just"
       - "pipeline.yml"
-      - ".github/actions/pipeline/**"
+      - ".github/actions/**"
       - ".github/workflows/online.yml"
       - "!**/*.md"
   schedule:
@@ -62,118 +62,246 @@ jobs:
             3
             check
 
-  stable-images:
-    name: Stable images (${{ matrix.arch }})
+  stable-ips:
+    name: Stable IPS (${{ matrix.platform.architecture }})
     if: >-
       github.event_name != 'workflow_dispatch' ||
       inputs.target == 'all' ||
       inputs.target == 'stable'
     needs: check
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 360
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-latest
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    permissions:
-      contents: read
-      packages: write
-    env:
-      PUBLISH: "true"
-      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      REGISTRY_USER: ${{ github.actor }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: jlumbroso/free-disk-space@v1.3.1
-        with:
-          tool-cache: true
-      - uses: ./.github/actions/pipeline
-        with:
-          arguments: stable-${{ matrix.arch }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: stable-digests-${{ github.run_id }}-${{ matrix.arch }}
-          path: dist/online/state/stable/${{ github.run_id }}/*-${{ matrix.arch }}.digest
-          compression-level: 0
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 30
-
-  stable-manifests:
-    name: Stable manifests
-    needs: stable-images
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-      packages: write
-    env:
-      PUBLISH: "true"
-      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      REGISTRY_USER: ${{ github.actor }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: stable-digests-${{ github.run_id }}-*
-          path: dist/online/state/stable/${{ github.run_id }}
-          merge-multiple: true
-      - uses: sigstore/cosign-installer@v3
-      - uses: ./.github/actions/pipeline
-        with:
-          arguments: stable-manifests
-
-  media:
-    name: Online media (${{ matrix.arch }})
-    if: >-
-      github.event_name != 'workflow_dispatch' ||
-      inputs.target == 'all' ||
-      inputs.target == 'stable'
-    needs: check
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.platform.runner }}
     timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: amd64
-            coreos_arch: x86_64
+        platform:
+          - architecture: amd64
             runner: ubuntu-latest
-          - arch: arm64
-            coreos_arch: aarch64
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/image-task
+        with:
+          stream: stable
+          image: ips
+          architecture: ${{ matrix.platform.architecture }}
+
+  stable-workstation:
+    name: Stable Workstation (${{ matrix.platform.architecture }})
+    needs: stable-ips
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - architecture: amd64
+            runner: ubuntu-latest
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/image-task
+        with:
+          stream: stable
+          image: workstation
+          architecture: ${{ matrix.platform.architecture }}
+
+  stable-sway:
+    name: Stable Sway (${{ matrix.platform.architecture }})
+    needs: stable-workstation
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - architecture: amd64
+            runner: ubuntu-latest
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/image-task
+        with:
+          stream: stable
+          image: sway
+          architecture: ${{ matrix.platform.architecture }}
+
+  stable-nas:
+    name: Stable NAS (${{ matrix.platform.architecture }})
+    needs: stable-ips
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - architecture: amd64
+            runner: ubuntu-latest
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/image-task
+        with:
+          stream: stable
+          image: nas
+          architecture: ${{ matrix.platform.architecture }}
+
+  stable-vm:
+    name: Stable VM (${{ matrix.platform.architecture }})
+    needs: stable-ips
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - architecture: amd64
+            runner: ubuntu-latest
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/image-task
+        with:
+          stream: stable
+          image: vm
+          architecture: ${{ matrix.platform.architecture }}
+
+  stable-guests:
+    name: Stable ${{ matrix.image }} (${{ matrix.platform.architecture }})
+    needs: stable-vm
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [k3s, minecraft, jellyfin]
+        platform:
+          - architecture: amd64
+            runner: ubuntu-latest
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/image-task
+        with:
+          stream: stable
+          image: ${{ matrix.image }}
+          architecture: ${{ matrix.platform.architecture }}
+
+  stable-preflight:
+    name: Verify stable image graph
+    needs:
+      - stable-ips
+      - stable-workstation
+      - stable-sway
+      - stable-nas
+      - stable-vm
+      - stable-guests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: image-digest-stable-${{ github.run_id }}-*
+          path: dist/online/state/stable/${{ github.run_id }}
+          merge-multiple: true
+      - uses: ./.github/actions/pipeline
+        env:
+          BUILD_STREAM: stable
+          PUBLISH: "true"
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        with:
+          arguments: manifest-preflight
+
+  stable-manifests:
+    name: Stable ${{ matrix.image }} manifest
+    needs: stable-preflight
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [ips, workstation, sway, nas, vm, k3s, minecraft, jellyfin]
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: image-digest-stable-${{ github.run_id }}-${{ matrix.image }}-*
+          path: dist/online/state/stable/${{ github.run_id }}
+          merge-multiple: true
+      - uses: sigstore/cosign-installer@v3
+      - uses: ./.github/actions/pipeline
+        env:
+          BUILD_IMAGE_NAME: ${{ matrix.image }}
+          BUILD_STREAM: stable
+          PUBLISH: "true"
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        with:
+          arguments: manifest-task
+
+  media:
+    name: Online ${{ matrix.profile }} (${{ matrix.platform.architecture }})
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      inputs.target == 'all' ||
+      inputs.target == 'stable'
+    needs: check
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [nas, workstation, sway]
+        platform:
+          - architecture: amd64
+            coreos: x86_64
+            runner: ubuntu-latest
+          - architecture: arm64
+            coreos: aarch64
             runner: ubuntu-24.04-arm
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: jlumbroso/free-disk-space@v1.3.1
+      - uses: ./.github/actions/media-task
         with:
-          tool-cache: true
-      - uses: ./.github/actions/pipeline
-        with:
-          arguments: media-${{ matrix.arch }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: online-media-${{ github.run_id }}-${{ matrix.arch }}
-          compression-level: 0
-          path: |
-            dist/online/iso/*-${{ matrix.coreos_arch }}.iso
-            dist/online/iso/*-${{ matrix.coreos_arch }}.iso.sha256
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 30
-      - uses: actions/upload-artifact@v4
-        if: matrix.arch == 'amd64'
-        with:
-          name: online-ignition-${{ github.run_id }}
-          path: dist/online/ign/*.ign
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 30
+          profile: ${{ matrix.profile }}
+          architecture: ${{ matrix.platform.architecture }}
+          coreos-architecture: ${{ matrix.platform.coreos }}
+          upload-ignition: >-
+            ${{ matrix.profile == 'nas' &&
+                matrix.platform.architecture == 'amd64' }}
 
   release:
     name: Continuous release
@@ -186,6 +314,10 @@ jobs:
       PUBLISH: "true"
     steps:
       - uses: actions/checkout@v4
+      - name: Free runner disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
       - uses: actions/download-artifact@v4
         with:
           pattern: online-media-${{ github.run_id }}-*
@@ -195,75 +327,151 @@ jobs:
         with:
           arguments: release-assets
 
-  next-images:
-    name: Next images (${{ matrix.arch }})
+  next-ips:
+    name: Next IPS (${{ matrix.platform.architecture }})
     if: >-
       github.event_name != 'workflow_dispatch' ||
       inputs.target == 'all' ||
       inputs.target == 'next'
     needs: check
     continue-on-error: true
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 360
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: amd64
+        platform:
+          - architecture: amd64
             runner: ubuntu-latest
-          - arch: arm64
+          - architecture: arm64
             runner: ubuntu-24.04-arm
     permissions:
       contents: read
       packages: write
-    env:
-      PUBLISH: "true"
-      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      REGISTRY_USER: ${{ github.actor }}
     steps:
       - uses: actions/checkout@v4
-      - uses: jlumbroso/free-disk-space@v1.3.1
+      - uses: ./.github/actions/image-task
         with:
-          tool-cache: true
-      - uses: ./.github/actions/pipeline
-        with:
-          arguments: next-${{ matrix.arch }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: next-digests-${{ github.run_id }}-${{ matrix.arch }}
-          path: dist/online/state/next/${{ github.run_id }}/*-${{ matrix.arch }}.digest
-          compression-level: 0
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 30
+          stream: next
+          image: ips
+          architecture: ${{ matrix.platform.architecture }}
 
-  next-manifests:
-    name: Next manifests
+  next-workstation:
+    name: Next workstation (${{ matrix.platform.architecture }})
     if: >-
       always() && !cancelled() &&
-      needs.next-images.result != 'skipped' &&
-      (github.event_name != 'workflow_dispatch' ||
-      inputs.target == 'all' ||
-      inputs.target == 'next')
-    needs: next-images
+      needs.next-ips.result != 'skipped'
+    needs: next-ips
     continue-on-error: true
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - architecture: amd64
+            runner: ubuntu-latest
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
     permissions:
       contents: read
-      id-token: write
       packages: write
-    env:
-      PUBLISH: "true"
-      REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      REGISTRY_USER: ${{ github.actor }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/image-task
+        with:
+          stream: next
+          image: workstation
+          architecture: ${{ matrix.platform.architecture }}
+
+  next-sway:
+    name: Next Sway (${{ matrix.platform.architecture }})
+    if: >-
+      always() && !cancelled() &&
+      needs.next-workstation.result != 'skipped'
+    needs: next-workstation
+    continue-on-error: true
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - architecture: amd64
+            runner: ubuntu-latest
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/image-task
+        with:
+          stream: next
+          image: sway
+          architecture: ${{ matrix.platform.architecture }}
+
+  next-preflight:
+    name: Verify next image graph
+    if: >-
+      always() && !cancelled() &&
+      needs.next-sway.result != 'skipped'
+    needs: next-sway
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.verify.outcome == 'success' }}
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          pattern: next-digests-${{ github.run_id }}-*
+          pattern: image-digest-next-${{ github.run_id }}-*
+          path: dist/online/state/next/${{ github.run_id }}
+          merge-multiple: true
+      - id: verify
+        uses: ./.github/actions/pipeline
+        env:
+          BUILD_STREAM: next
+          PUBLISH: "true"
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        with:
+          arguments: manifest-preflight
+
+  next-manifests:
+    name: Next ${{ matrix.image }} manifest
+    if: >-
+      always() && !cancelled() &&
+      needs.next-preflight.outputs.ready == 'true'
+    needs: next-preflight
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [ips, workstation, sway]
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: image-digest-next-${{ github.run_id }}-${{ matrix.image }}-*
           path: dist/online/state/next/${{ github.run_id }}
           merge-multiple: true
       - uses: sigstore/cosign-installer@v3
       - uses: ./.github/actions/pipeline
+        env:
+          BUILD_IMAGE_NAME: ${{ matrix.image }}
+          BUILD_STREAM: next
+          PUBLISH: "true"
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
         with:
-          arguments: next-manifests
+          arguments: manifest-task

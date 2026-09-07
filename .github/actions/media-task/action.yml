@@ -1,0 +1,55 @@
+name: Build one online installer with Pipeline
+description: Free runner storage, build one installer, and upload it
+
+inputs:
+  profile:
+    description: Installer profile
+    required: true
+  architecture:
+    description: OCI architecture
+    required: true
+  coreos-architecture:
+    description: Fedora CoreOS architecture
+    required: true
+  upload-ignition:
+    description: Upload the rendered Ignition configurations
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Free runner disk space
+      uses: jlumbroso/free-disk-space@v1.3.1
+      with:
+        tool-cache: true
+
+    - name: Build with Pipeline
+      uses: ./.github/actions/pipeline
+      env:
+        BUILD_ARCHITECTURE: ${{ inputs.architecture }}
+        BUILD_PROFILE: ${{ inputs.profile }}
+      with:
+        arguments: media-task
+
+    - name: Upload installer
+      uses: actions/upload-artifact@v4
+      with:
+        name: online-media-${{ github.run_id }}-${{ inputs.profile }}-${{ inputs.architecture }}
+        path: |
+          dist/online/iso/${{ inputs.profile }}-${{ inputs.coreos-architecture }}.iso
+          dist/online/iso/${{ inputs.profile }}-${{ inputs.coreos-architecture }}.iso.sha256
+        compression-level: 0
+        if-no-files-found: error
+        overwrite: true
+        retention-days: 30
+
+    - name: Upload Ignition configurations
+      if: inputs.upload-ignition == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: online-ignition-${{ github.run_id }}
+        path: dist/online/ign/*.ign
+        if-no-files-found: error
+        overwrite: true
+        retention-days: 30
