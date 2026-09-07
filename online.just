@@ -18,6 +18,14 @@ release:
 release-assets:
     @{{ quote(just_executable()) }} online::_release
 
+# Publish one built installer to GitLab's Generic Package Registry.
+gitlab-media-publish:
+    @{{ quote(just_executable()) }} online::_gitlab_media_publish
+
+# Publish links for the built installers as a GitLab release.
+gitlab-release-assets:
+    @{{ quote(just_executable()) }} online::_gitlab_release
+
 # Build one run-scoped image selected by the build environment.
 image-task:
     #!/usr/bin/env bash
@@ -36,6 +44,27 @@ manifest-task:
     image="${BUILD_IMAGE_NAME:?BUILD_IMAGE_NAME is required}"
     just={{ quote(just_executable()) }}
     exec "$just" online::_images "$stream" manifests "$image"
+
+# Publish one GitLab manifest only while this is the default-branch revision.
+gitlab-manifest-task:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    : "${CI_API_V4_URL:?CI_API_V4_URL is required}"
+    : "${CI_COMMIT_SHA:?CI_COMMIT_SHA is required}"
+    : "${CI_DEFAULT_BRANCH:?CI_DEFAULT_BRANCH is required}"
+    : "${CI_JOB_TOKEN:?CI_JOB_TOKEN is required}"
+    : "${CI_PROJECT_ID:?CI_PROJECT_ID is required}"
+    encoded_branch="$(jq -rn --arg value "$CI_DEFAULT_BRANCH" '$value | @uri')"
+    branch_sha="$(curl --fail-with-body --silent --show-error --location \
+        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+        "$CI_API_V4_URL/projects/$CI_PROJECT_ID/repository/commits/$encoded_branch" |
+        jq -r '.id')"
+    if [[ "$branch_sha" != "$CI_COMMIT_SHA" ]]; then
+        echo "Skipping stale manifest for $CI_COMMIT_SHA; $CI_DEFAULT_BRANCH is at $branch_sha."
+        exit 0
+    fi
+    just={{ quote(just_executable()) }}
+    exec "$just" online::manifest-task
 
 # Verify every staged image digest before any public tag is changed.
 manifest-preflight:
@@ -894,3 +923,205 @@ _release:
         cat "$release_error" >&2
         exit 1
     fi
+
+[private]
+_gitlab_media_publish:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    repo={{ quote(justfile_directory()) }}
+    architecture="${BUILD_ARCHITECTURE:?BUILD_ARCHITECTURE is required}"
+    profile="${BUILD_PROFILE:?BUILD_PROFILE is required}"
+    : "${CI_API_V4_URL:?CI_API_V4_URL is required}"
+    : "${CI_JOB_TOKEN:?CI_JOB_TOKEN is required}"
+    : "${CI_JOB_ID:?CI_JOB_ID is required}"
+    : "${CI_PIPELINE_IID:?CI_PIPELINE_IID is required}"
+    : "${CI_PROJECT_ID:?CI_PROJECT_ID is required}"
+
+    if [[ "${PUBLISH:-false}" != true ]]; then
+        echo "set PUBLISH=true to publish GitLab installer assets" >&2
+        exit 2
+    fi
+    for command in curl jq; do
+        command -v "$command" >/dev/null 2>&1 || {
+            echo "$command is required to publish GitLab installer assets" >&2
+            exit 1
+        }
+    done
+
+    case "$architecture" in
+        amd64) coreos_arch=x86_64 ;;
+        arm64) coreos_arch=aarch64 ;;
+        *)
+            echo "unsupported media architecture: $architecture" >&2
+            exit 2
+            ;;
+    esac
+    case "$profile" in
+        nas|workstation|sway) ;;
+        *)
+            echo "unsupported media profile: $profile" >&2
+            exit 2
+            ;;
+    esac
+
+    package_name="${GITLAB_PACKAGE_PREFIX:-infrastructure}-${CI_JOB_ID}"
+    package_version="${GITLAB_PACKAGE_VERSION:-continuous-${CI_PIPELINE_IID}}"
+    package_url="$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/$package_name/$package_version"
+    release_dir="$repo/dist/online/iso"
+    stem="$profile-$coreos_arch"
+
+    for asset in "$release_dir/$stem.iso" "$release_dir/$stem.iso.sha256"; do
+        if [[ ! -s "$asset" ]]; then
+            echo "missing GitLab package asset: $asset" >&2
+            exit 1
+        fi
+    done
+    (cd "$release_dir" && sha256sum --check "$stem.iso.sha256")
+
+    for asset in "$release_dir/$stem.iso" "$release_dir/$stem.iso.sha256"; do
+        asset_name="${asset##*/}"
+        asset_url="$package_url/$asset_name"
+        curl --fail-with-body --location \
+            --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+            --upload-file "$asset" "$asset_url"
+    done
+
+    marker_dir="$repo/dist/gitlab-media"
+    mkdir -p "$marker_dir"
+    jq --null-input \
+        --arg iso_name "$stem.iso" \
+        --arg iso_url "$package_url/$stem.iso" \
+        --arg checksum_name "$stem.iso.sha256" \
+        --arg checksum_url "$package_url/$stem.iso.sha256" \
+        '[
+            {name: $iso_name, url: $iso_url, link_type: "other"},
+            {name: $checksum_name, url: $checksum_url, link_type: "other"}
+        ]' > "$marker_dir/$stem.json"
+
+[private]
+_gitlab_release:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    repo={{ quote(justfile_directory()) }}
+    : "${CI_API_V4_URL:?CI_API_V4_URL is required}"
+    : "${CI_JOB_TOKEN:?CI_JOB_TOKEN is required}"
+    : "${CI_JOB_ID:?CI_JOB_ID is required}"
+    : "${CI_PIPELINE_IID:?CI_PIPELINE_IID is required}"
+    : "${CI_PROJECT_ID:?CI_PROJECT_ID is required}"
+
+    if [[ "${PUBLISH:-false}" != true ]]; then
+        echo "set PUBLISH=true to publish the GitLab release" >&2
+        exit 2
+    fi
+    command -v jq >/dev/null 2>&1 || {
+        echo "jq is required to publish the GitLab release" >&2
+        exit 1
+    }
+
+    release_tag="${GITLAB_RELEASE_TAG:-continuous-${CI_PIPELINE_IID}-${CI_JOB_ID}}"
+    release_name="${GITLAB_RELEASE_NAME:-Continuous ${CI_PIPELINE_IID}}"
+    release_repo="${GITLAB_RELEASE_REPOSITORY:-${CI_PROJECT_PATH:-}}"
+    export GLAB_ENABLE_CI_AUTOLOGIN="${GLAB_ENABLE_CI_AUTOLOGIN:-true}"
+
+    run_podman() {
+        if command -v podman >/dev/null 2>&1; then
+            podman "$@"
+        elif command -v flatpak-spawn >/dev/null 2>&1; then
+            flatpak-spawn --host podman "$@"
+        else
+            echo "podman is required when the GitLab CLI is not installed" >&2
+            exit 1
+        fi
+    }
+
+    run_glab() {
+        if command -v glab >/dev/null 2>&1; then
+            glab "$@"
+        elif command -v flatpak-spawn >/dev/null 2>&1 \
+            && flatpak-spawn --host sh -lc 'command -v glab >/dev/null 2>&1'; then
+            flatpak-spawn --host env \
+                CI_JOB_TOKEN="$CI_JOB_TOKEN" \
+                GLAB_ENABLE_CI_AUTOLOGIN="$GLAB_ENABLE_CI_AUTOLOGIN" \
+                glab "$@"
+        else
+            run_podman run --rm \
+                -e CI_API_V4_URL \
+                -e CI_JOB_TOKEN \
+                -e CI_PROJECT_PATH \
+                -e CI_PROJECT_URL \
+                -e CI_SERVER_FQDN \
+                -e CI_SERVER_HOST \
+                -e CI_SERVER_PROTOCOL \
+                -e GITLAB_CI \
+                -e GLAB_ENABLE_CI_AUTOLOGIN \
+                -v "$repo:$repo:Z" -w "$repo" \
+                registry.gitlab.com/gitlab-org/cli:latest "$@"
+        fi
+    }
+
+    glab_repo=()
+    if [[ -n "$release_repo" ]]; then
+        glab_repo=(--repo "$release_repo")
+    fi
+
+    marker_dir="$repo/dist/gitlab-media"
+    shopt -s nullglob
+    markers=("$marker_dir"/*.json)
+    shopt -u nullglob
+    if (( ${#markers[@]} != 6 )); then
+        echo "expected six GitLab media markers in $marker_dir, found ${#markers[@]}" >&2
+        exit 1
+    fi
+    for marker in "${markers[@]}"; do
+        jq --exit-status '
+            type == "array" and length == 2 and
+            all(.[];
+                (.name | type == "string") and
+                (.url | type == "string") and
+                .link_type == "other")
+        ' "$marker" >/dev/null
+    done
+    asset_links="$(jq --slurp --compact-output 'add' "${markers[@]}")"
+
+    for coreos_arch in x86_64 aarch64; do
+        for profile in nas workstation sway; do
+            for suffix in .iso .iso.sha256; do
+                asset_name="$profile-$coreos_arch$suffix"
+                count="$(jq --arg name "$asset_name" \
+                    '[.[] | select(.name == $name)] | length' <<<"$asset_links")"
+                if [[ "$count" != 1 ]]; then
+                    echo "expected one GitLab media link named $asset_name, found $count" >&2
+                    exit 1
+                fi
+            done
+        done
+    done
+
+    package_prefix="$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/"
+    while IFS=$'\t' read -r asset_name asset_url; do
+        if [[ "$asset_url" != "$package_prefix"*"/$asset_name" ]]; then
+            echo "unexpected GitLab package URL for $asset_name: $asset_url" >&2
+            exit 1
+        fi
+    done < <(jq -r '.[] | [.name, .url] | @tsv' <<<"$asset_links")
+
+    if [[ -n "${CI_DEFAULT_BRANCH:-}" && -n "${CI_COMMIT_SHA:-}" ]]; then
+        encoded_branch="$(jq -rn --arg value "$CI_DEFAULT_BRANCH" '$value | @uri')"
+        branch_sha="$(curl --fail-with-body --silent --show-error --location \
+            --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+            "$CI_API_V4_URL/projects/$CI_PROJECT_ID/repository/commits/$encoded_branch" |
+            jq -r '.id')"
+        if [[ "$branch_sha" != "$CI_COMMIT_SHA" ]]; then
+            echo "Skipping stale release for $CI_COMMIT_SHA; $CI_DEFAULT_BRANCH is at $branch_sha."
+            exit 0
+        fi
+    fi
+
+    run_glab release create "$release_tag" \
+        --assets-links "$asset_links" \
+        --name "$release_name" \
+        --notes "Build from ${CI_COMMIT_SHA:-HEAD}." \
+        --ref "${CI_COMMIT_SHA:-HEAD}" \
+        "${glab_repo[@]}"

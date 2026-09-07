@@ -79,12 +79,27 @@ pipelines:
       publish:
         just: online::manifest-task
 
+  gitlab-manifest-task:
+    jobs:
+      publish:
+        just: online::gitlab-manifest-task
+
   media-task:
     jobs:
       build:
         just: online::media-task
 
+  gitlab-media-publish:
+    jobs:
+      publish:
+        just: online::gitlab-media-publish
+
   release-assets:
     jobs:
       publish:
         just: online::release-assets
+
+  gitlab-release-assets:
+    jobs:
+      publish:
+        just: online::gitlab-release-assets

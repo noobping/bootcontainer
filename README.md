@@ -1,6 +1,7 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 [![Check](https://github.com/noobping/infrastructure/actions/workflows/check.yml/badge.svg)](https://github.com/noobping/infrastructure/actions/workflows/check.yml)
 [![Build](https://github.com/noobping/infrastructure/actions/workflows/build.yml/badge.svg)](https://github.com/noobping/infrastructure/actions/workflows/build.yml)
+[![GitLab CI](https://gitlab.com/noobping/infrastructure/badges/main/pipeline.svg)](https://gitlab.com/noobping/infrastructure/-/pipelines)
 
 # Infrastructure
 
@@ -34,6 +35,16 @@ allow it to fail without hiding failures in the stable graph. It builds and
 publishes the next IPS, Workstation, and Sway images for both architectures
 with `:next` manifests.
 
+GitHub Actions and GitLab CI both call these same Pipeline targets. Every image
+architecture and every ISO has its own CI job and therefore its own hosted
+runner; dependency edges only wait for the matching parent architecture.
+GitLab requires 18.6 or newer for these one-to-one matrix dependencies. Its
+default `saas-linux-small-amd64` and `saas-linux-small-arm64` tags can be
+replaced with larger or self-managed native runner tags when a build needs more
+disk. Self-managed runners must support privileged container builds. Offline
+builds are intentionally local-only on both CI platforms. Add a GitLab
+pipeline schedule when the GitHub workflow's daily build cadence is wanted.
+
 Pipeline's offline commands always build both architectures. For a smaller or
 native-only offline build, call Just directly:
 
@@ -52,16 +63,25 @@ branches within a graph run in parallel.
 
 ## Publishing and build environment
 
-Online builds default to `IMAGE_NAMESPACE=ghcr.io/noobping`. Authenticate the
-container tools with `REGISTRY_USER` and `REGISTRY_TOKEN`; in GitHub Actions the
-token comes from `GITHUB_TOKEN`. Publishing to a non-local registry requires
-`PUBLISH=true` and a clean checkout; `ALLOW_DIRTY=true` is available for an
-intentional development build. Manifest signing uses Cosign's ambient keyless
-credentials, including GitHub's OIDC identity. Set `SIGN_IMAGES=false` for an
-unsigned test registry and `REGISTRY_TLS_VERIFY=false` for an insecure local
-registry. `pipeline release` publishes the files in `dist/online/iso` to the
-continuous GitHub release with `GH_TOKEN` or `GITHUB_TOKEN`; it uses an
-installed GitHub CLI or its container image.
+Online builds default to `IMAGE_NAMESPACE=ghcr.io/noobping`. GitHub Actions
+uses that namespace; GitLab CI overrides it with its project container
+registry. Authenticate the container tools with `REGISTRY_USER` and
+`REGISTRY_TOKEN`. Publishing to a non-local registry requires `PUBLISH=true`
+and a clean checkout; `ALLOW_DIRTY=true` is available for an intentional
+development build. Manifest signing uses Cosign's ambient keyless credentials
+from GitHub or GitLab.com OIDC. Set `SIGN_IMAGES=false` for an unsigned or
+self-managed test registry and `REGISTRY_TLS_VERIFY=false` for an insecure
+local registry.
+
+`pipeline release` publishes `dist/online/iso` to the continuous GitHub
+release with `GH_TOKEN` or `GITHUB_TOKEN`. GitLab's six media jobs each upload
+their verified ISO and checksum directly through the
+`gitlab-media-publish` leaf, avoiding GitLab.com's 1 GB artifact limit. The
+final `gitlab-release-assets` leaf creates an immutable release containing
+links to that pipeline's Generic Package Registry assets. Each successful
+pipeline keeps versioned packages; remove old versions according to your
+retention needs. Both paths run through Pipeline; their CLI tools can be
+installed on the host or run through Podman.
 
 Image builds need host Podman and Buildah, plus Skopeo for split-runner manifest
 publication, Cosign when signing is enabled, sufficient disk space, and

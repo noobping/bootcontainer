@@ -1,0 +1,483 @@
+workflow:
+  auto_cancel:
+    on_new_commit: interruptible
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: >-
+        $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH &&
+        ($CI_PIPELINE_SOURCE == "push" ||
+         $CI_PIPELINE_SOURCE == "web" ||
+         $CI_PIPELINE_SOURCE == "schedule")
+    - when: never
+
+stages:
+  - check
+  - base
+  - derived
+  - leaf
+  - verify
+  - publish
+  - media
+  - release
+
+default:
+  image: registry.fedoraproject.org/fedora:43
+  interruptible: true
+
+variables:
+  BUILD_TARGET:
+    value: all
+    options:
+      - all
+      - stable
+      - next
+    description: Select the online stream built by a manual pipeline.
+  BUILDAH_ISOLATION: chroot
+  COSIGN_AMD64_SHA256: 309779b0c4e409186b0a80daba99041fe2cf65a920ce645013901df6211895a9
+  COSIGN_VERSION: v2.6.4
+  IMAGE_NAMESPACE: "$CI_REGISTRY_IMAGE"
+  PIPELINE_IMAGE: registry.gitlab.com/noobping/pipeline:latest
+  PIPELINE_PULL: newer
+  PIPELINE_RUN_ID: "$CI_PIPELINE_ID"
+  PUBLISH: "true"
+  REVISION: "$CI_COMMIT_SHA"
+  SOURCE_URL: "$CI_PROJECT_URL"
+  STORAGE_DRIVER: overlay
+  TMPDIR: /tmp/pipeline
+
+.pipeline-job:
+  before_script:
+    - >-
+      dnf install --assumeyes --setopt=install_weak_deps=False
+      buildah ca-certificates coreutils curl findutils fuse-overlayfs git jq
+      podman skopeo util-linux xorriso
+    - dnf clean all
+    - rm -rf /var/cache/dnf
+    - mkdir -p "$TMPDIR" /tmp/containers /tmp/runcontainers
+    - |
+      cat >/etc/containers/storage.conf <<'EOF'
+      [storage]
+      driver = "overlay"
+      runroot = "/tmp/runcontainers/storage"
+      graphroot = "/tmp/containers/storage"
+
+      [storage.options.overlay]
+      mount_program = "/usr/bin/fuse-overlayfs"
+      EOF
+    - export REGISTRY_USER="$CI_REGISTRY_USER"
+    - export REGISTRY_TOKEN="$CI_REGISTRY_PASSWORD"
+    - source "$CI_PROJECT_DIR/images/nas/pipeline.sh"
+
+.architecture-matrix:
+  parallel:
+    matrix:
+      - ARCH: [amd64, arm64]
+  tags:
+    - "saas-linux-small-${ARCH}"
+
+.stable-rules:
+  rules:
+    - if: >-
+        ($CI_PIPELINE_SOURCE == "web" ||
+         $CI_PIPELINE_SOURCE == "schedule") &&
+        ($BUILD_TARGET == "all" || $BUILD_TARGET == "stable")
+    - if: >-
+        $CI_PIPELINE_SOURCE == "push" &&
+        ($BUILD_TARGET == "all" || $BUILD_TARGET == "stable")
+      changes:
+        - butane/**/*
+        - images/**/*
+        - vms/**/*
+        - justfile
+        - online.just
+        - pipeline.yml
+        - .gitlab-ci.yml
+    - when: never
+
+.next-rules:
+  rules:
+    - if: >-
+        ($CI_PIPELINE_SOURCE == "web" ||
+         $CI_PIPELINE_SOURCE == "schedule") &&
+        ($BUILD_TARGET == "all" || $BUILD_TARGET == "next")
+    - if: >-
+        $CI_PIPELINE_SOURCE == "push" &&
+        ($BUILD_TARGET == "all" || $BUILD_TARGET == "next")
+      changes:
+        - butane/**/*
+        - images/**/*
+        - vms/**/*
+        - justfile
+        - online.just
+        - pipeline.yml
+        - .gitlab-ci.yml
+    - when: never
+
+.image-task:
+  extends: .pipeline-job
+  timeout: 3 hours
+  script:
+    - pipeline image-task
+  artifacts:
+    name: "image-digest-$BUILD_STREAM-$CI_PIPELINE_ID-$BUILD_IMAGE_NAME-$ARCH"
+    paths:
+      - "dist/online/state/$BUILD_STREAM/$CI_PIPELINE_ID/$BUILD_IMAGE_NAME-$ARCH.digest"
+    expire_in: 30 days
+
+check:
+  extends: .pipeline-job
+  stage: check
+  tags:
+    - saas-linux-small-amd64
+  script:
+    - pipeline --cap-jobs 3 check
+
+stable-ips:
+  extends:
+    - .image-task
+    - .architecture-matrix
+    - .stable-rules
+  stage: base
+  variables:
+    BUILD_ARCHITECTURE: "$ARCH"
+    BUILD_IMAGE_NAME: ips
+    BUILD_STREAM: stable
+  needs:
+    - job: check
+      artifacts: false
+
+stable-workstation:
+  extends:
+    - .image-task
+    - .architecture-matrix
+    - .stable-rules
+  stage: derived
+  variables:
+    BUILD_ARCHITECTURE: "$ARCH"
+    BUILD_IMAGE_NAME: workstation
+    BUILD_STREAM: stable
+  needs:
+    - job: stable-ips
+      artifacts: false
+      parallel:
+        matrix:
+          - ARCH: ['$[[ matrix.ARCH ]]']
+
+stable-nas:
+  extends:
+    - .image-task
+    - .architecture-matrix
+    - .stable-rules
+  stage: derived
+  variables:
+    BUILD_ARCHITECTURE: "$ARCH"
+    BUILD_IMAGE_NAME: nas
+    BUILD_STREAM: stable
+  needs:
+    - job: stable-ips
+      artifacts: false
+      parallel:
+        matrix:
+          - ARCH: ['$[[ matrix.ARCH ]]']
+
+stable-vm:
+  extends:
+    - .image-task
+    - .architecture-matrix
+    - .stable-rules
+  stage: derived
+  variables:
+    BUILD_ARCHITECTURE: "$ARCH"
+    BUILD_IMAGE_NAME: vm
+    BUILD_STREAM: stable
+  needs:
+    - job: stable-ips
+      artifacts: false
+      parallel:
+        matrix:
+          - ARCH: ['$[[ matrix.ARCH ]]']
+
+stable-sway:
+  extends:
+    - .image-task
+    - .architecture-matrix
+    - .stable-rules
+  stage: leaf
+  variables:
+    BUILD_ARCHITECTURE: "$ARCH"
+    BUILD_IMAGE_NAME: sway
+    BUILD_STREAM: stable
+  needs:
+    - job: stable-workstation
+      artifacts: false
+      parallel:
+        matrix:
+          - ARCH: ['$[[ matrix.ARCH ]]']
+
+stable-guests:
+  extends:
+    - .image-task
+    - .stable-rules
+  stage: leaf
+  parallel:
+    matrix:
+      - BUILD_IMAGE_NAME: [k3s, minecraft, jellyfin]
+        ARCH: [amd64, arm64]
+  tags:
+    - "saas-linux-small-${ARCH}"
+  variables:
+    BUILD_ARCHITECTURE: "$ARCH"
+    BUILD_STREAM: stable
+  needs:
+    - job: stable-vm
+      artifacts: false
+      parallel:
+        matrix:
+          - ARCH: ['$[[ matrix.ARCH ]]']
+
+stable-preflight:
+  extends:
+    - .pipeline-job
+    - .stable-rules
+  stage: verify
+  tags:
+    - saas-linux-small-amd64
+  variables:
+    BUILD_STREAM: stable
+  needs:
+    - job: stable-ips
+      artifacts: true
+    - job: stable-workstation
+      artifacts: true
+    - job: stable-sway
+      artifacts: true
+    - job: stable-nas
+      artifacts: true
+    - job: stable-vm
+      artifacts: true
+    - job: stable-guests
+      artifacts: true
+  script:
+    - pipeline manifest-preflight
+  artifacts:
+    name: "stable-image-digests-$CI_PIPELINE_ID"
+    paths:
+      - "dist/online/state/stable/$CI_PIPELINE_ID/"
+    expire_in: 30 days
+
+stable-manifests:
+  extends:
+    - .pipeline-job
+    - .stable-rules
+  stage: publish
+  interruptible: false
+  tags:
+    - saas-linux-small-amd64
+  parallel:
+    matrix:
+      - BUILD_IMAGE_NAME: [ips, workstation, sway, nas, vm, k3s, minecraft, jellyfin]
+  variables:
+    BUILD_STREAM: stable
+    COSIGN_YES: "true"
+  id_tokens:
+    SIGSTORE_ID_TOKEN:
+      aud: sigstore
+  resource_group: "manifest-$BUILD_STREAM-$BUILD_IMAGE_NAME"
+  needs:
+    - job: stable-preflight
+      artifacts: true
+  script:
+    - curl --fail --location --output /usr/local/bin/cosign "https://github.com/sigstore/cosign/releases/download/$COSIGN_VERSION/cosign-linux-amd64"
+    - echo "$COSIGN_AMD64_SHA256  /usr/local/bin/cosign" | sha256sum --check --strict
+    - chmod 0755 /usr/local/bin/cosign
+    - pipeline gitlab-manifest-task
+
+online-media:
+  extends:
+    - .pipeline-job
+    - .stable-rules
+  stage: media
+  timeout: 2 hours
+  parallel:
+    matrix:
+      - PROFILE: [workstation, sway]
+        ARCH: amd64
+      - PROFILE: [nas, workstation, sway]
+        ARCH: arm64
+  tags:
+    - "saas-linux-small-${ARCH}"
+  variables:
+    BUILD_ARCHITECTURE: "$ARCH"
+    BUILD_PROFILE: "$PROFILE"
+  needs:
+    - job: check
+      artifacts: false
+  script:
+    - pipeline media-task
+    - pipeline gitlab-media-publish
+  artifacts:
+    name: "gitlab-media-link-$CI_PIPELINE_ID-$PROFILE-$ARCH"
+    paths:
+      - dist/gitlab-media/*.json
+    expire_in: 30 days
+
+online-media-nas-amd64:
+  extends:
+    - .pipeline-job
+    - .stable-rules
+  stage: media
+  timeout: 2 hours
+  tags:
+    - saas-linux-small-amd64
+  variables:
+    BUILD_ARCHITECTURE: amd64
+    BUILD_PROFILE: nas
+  needs:
+    - job: check
+      artifacts: false
+  script:
+    - pipeline media-task
+    - pipeline gitlab-media-publish
+  artifacts:
+    name: "gitlab-media-link-$CI_PIPELINE_ID-nas-amd64"
+    paths:
+      - dist/gitlab-media/*.json
+      - dist/online/ign/*.ign
+    expire_in: 30 days
+
+release:
+  extends:
+    - .pipeline-job
+    - .stable-rules
+  stage: release
+  interruptible: false
+  tags:
+    - saas-linux-small-amd64
+  resource_group: continuous-release
+  needs:
+    - job: stable-manifests
+      artifacts: false
+    - job: online-media
+      artifacts: true
+    - job: online-media-nas-amd64
+      artifacts: true
+  script:
+    - dnf install --assumeyes --setopt=install_weak_deps=False glab
+    - dnf clean all
+    - pipeline gitlab-release-assets
+
+next-ips:
+  extends:
+    - .image-task
+    - .architecture-matrix
+    - .next-rules
+  stage: base
+  allow_failure: true
+  variables:
+    BUILD_ARCHITECTURE: "$ARCH"
+    BUILD_IMAGE_NAME: ips
+    BUILD_STREAM: next
+  needs:
+    - job: check
+      artifacts: false
+
+next-workstation:
+  extends:
+    - .image-task
+    - .architecture-matrix
+    - .next-rules
+  stage: derived
+  allow_failure: true
+  variables:
+    BUILD_ARCHITECTURE: "$ARCH"
+    BUILD_IMAGE_NAME: workstation
+    BUILD_STREAM: next
+  needs:
+    - job: next-ips
+      artifacts: false
+      parallel:
+        matrix:
+          - ARCH: ['$[[ matrix.ARCH ]]']
+
+next-sway:
+  extends:
+    - .image-task
+    - .architecture-matrix
+    - .next-rules
+  stage: leaf
+  allow_failure: true
+  variables:
+    BUILD_ARCHITECTURE: "$ARCH"
+    BUILD_IMAGE_NAME: sway
+    BUILD_STREAM: next
+  needs:
+    - job: next-workstation
+      artifacts: false
+      parallel:
+        matrix:
+          - ARCH: ['$[[ matrix.ARCH ]]']
+
+next-preflight:
+  extends:
+    - .pipeline-job
+    - .next-rules
+  stage: verify
+  allow_failure: true
+  tags:
+    - saas-linux-small-amd64
+  variables:
+    BUILD_STREAM: next
+  needs:
+    - job: next-ips
+      artifacts: true
+    - job: next-workstation
+      artifacts: true
+    - job: next-sway
+      artifacts: true
+  script:
+    - |
+      state="dist/online/state/next/$CI_PIPELINE_ID"
+      if pipeline manifest-preflight; then
+        touch "$state/.ready"
+      else
+        exit 1
+      fi
+  artifacts:
+    name: "next-image-digests-$CI_PIPELINE_ID"
+    when: always
+    paths:
+      - "dist/online/state/next/$CI_PIPELINE_ID/"
+    expire_in: 30 days
+
+next-manifests:
+  extends:
+    - .pipeline-job
+    - .next-rules
+  stage: publish
+  allow_failure: true
+  interruptible: false
+  tags:
+    - saas-linux-small-amd64
+  parallel:
+    matrix:
+      - BUILD_IMAGE_NAME: [ips, workstation, sway]
+  variables:
+    BUILD_STREAM: next
+    COSIGN_YES: "true"
+  id_tokens:
+    SIGSTORE_ID_TOKEN:
+      aud: sigstore
+  resource_group: "manifest-$BUILD_STREAM-$BUILD_IMAGE_NAME"
+  needs:
+    - job: next-preflight
+      artifacts: true
+  script:
+    - |
+      if [ ! -f "dist/online/state/next/$CI_PIPELINE_ID/.ready" ]; then
+        echo "Next preflight failed; manifests will not be published."
+        exit 0
+      fi
+    - curl --fail --location --output /usr/local/bin/cosign "https://github.com/sigstore/cosign/releases/download/$COSIGN_VERSION/cosign-linux-amd64"
+    - echo "$COSIGN_AMD64_SHA256  /usr/local/bin/cosign" | sha256sum --check --strict
+    - chmod 0755 /usr/local/bin/cosign
+    - pipeline gitlab-manifest-task
